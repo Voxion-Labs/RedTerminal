@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RedTerminal | Advanced Process Simulator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="grid-bg"></div>
+    <div id="dashboard">
+        <!-- Left Sidebar: Telemetry -->
+        <aside id="sidebar">
+            <div class="branding">
+                <h1>RED<span>TERM</span></h1>
+                <div class="subtitle">SYS_CORE v1.0.4</div>
+            </div>
+            
+            <div class="telemetry-box">
+                <h3>SYS.LOAD</h3>
+                <div class="progress-bar"><div class="fill red-fill" id="cpu-load"></div></div>
+                <div class="metrics">
+                    <span id="cpu-val">12%</span>
+                    <span>128 THREADS</span>
+                </div>
+            </div>
+
+            <div class="telemetry-box">
+                <h3>MEM.ALLOC</h3>
+                <div class="progress-bar"><div class="fill green-fill" id="mem-load"></div></div>
+                <div class="metrics">
+                    <span id="mem-val">4.2 GB</span>
+                    <span>16.0 GB MAX</span>
+                </div>
+            </div>
+            
+            <div class="telemetry-box">
+                <h3>ACTIVE.PROC</h3>
+                <div class="metrics-large" id="active-proc-count">00</div>
+            </div>
+            
+            <div class="status-indicator">
+                <div class="blinking-dot"></div>
+                SYSTEM ONLINE
+            </div>
+        </aside>
+
+        <!-- Main Terminal Area -->
+        <main id="terminal-container">
+            <header id="terminal-header">
+                <div class="window-controls">
+                    <div class="btn close"></div>
+                    <div class="btn min"></div>
+                    <div class="btn max"></div>
+                </div>
+                <div class="window-title">root@redterm:~ (Simulator)</div>
+            </header>
+            
+            <div id="terminal" onclick="document.getElementById('command-input').focus()">
+                <div id="output"></div>
+                <div id="input-line">
+                    <span id="prompt">RedTerm<span class="prompt-arrow">➜</span></span>
+                    <input type="text" id="command-input" autocomplete="off" spellcheck="false" autofocus>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

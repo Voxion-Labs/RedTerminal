@@ -1,0 +1,15 @@
+# Object files
+*.o
+obj/
+
+# Executables
+redterm
+*.exe
+
+# Logs
+*.log
+
+# Tests
+tests/test_process
+tests/test_scheduler
+tests/test_logger
