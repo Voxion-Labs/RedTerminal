@@ -94,18 +94,18 @@ RedTerminal currently ships with:
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="demo/screenshots/web-demo.png" alt="RedTerminal Web Demo" />
+      <img src="docs/assets/web-demo-boot.png" alt="RedTerminal Boot" />
       <br />
-      <strong>1. Web Terminal Dashboard</strong>
+      <strong>1. System Boot & Initialization</strong>
       <br />
-      The web version features a polished glassmorphism UI, real-time telemetry sidebar, and interactive terminal input mirroring the C application.
+      The web version features a polished glassmorphism UI that boots into a ready state with zero active processes and a clean telemetry sidebar.
     </td>
     <td width="50%" valign="top">
-      <img src="demo/screenshots/cli.png" alt="RedTerminal CLI interface" />
+      <img src="docs/assets/web-demo-active.png" alt="RedTerminal Active Processes" />
       <br />
-      <strong>2. C CLI Application</strong>
+      <strong>2. Active Process Simulation</strong>
       <br />
-      The native C application provides a robust REPL interface handling real-time commands while a background thread schedules CPU execution.
+      Once processes are spawned, the terminal tracks states in real-time, displaying PID allocations while the telemetry sidebar graphs synthetic CPU and memory load.
     </td>
   </tr>
 </table>
