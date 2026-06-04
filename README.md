@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="demo/screenshots/logo.png" alt="RedTerminal logo" width="220" />
+  <img src="docs/assets/logo.png" alt="RedTerminal logo" width="220" />
 </p>
 <h1 align="center">RedTerminal</h1>
 <p align="center">
@@ -266,7 +266,7 @@ License summary:
 
 ## 👨‍💻 Author
 <p align="center">
-  <img src="demo/screenshots/author-rudranarayan-jena.jpg" alt="Rudranarayan Jena" width="180" />
+  <img src="docs/assets/author-rudranarayan-jena.jpg" alt="Rudranarayan Jena" width="180" />
 </p>
 <p align="center">
   <strong>Crafted by Rudranarayan Jena</strong>
