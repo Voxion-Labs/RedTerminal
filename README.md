@@ -18,7 +18,7 @@ RedTerminal is a C-based process simulator and interactive CLI designed to explo
 
 ---
 
-## 🧭 What Is RedTerminal?
+##  What Is RedTerminal?
 RedTerminal acts as a playground and educational tool for developers who want to understand the inner workings of an operating system's process manager.
 
 At the technical level, RedTerminal acts as:
@@ -30,7 +30,7 @@ At the technical level, RedTerminal acts as:
 
 ---
 
-## 🩺 Problem It Solves
+##  Problem It Solves
 Learning about operating systems often involves massive codebases like the Linux kernel, making it hard to focus on fundamental concepts in isolation:
 
 - real OS kernels are overwhelmingly complex
@@ -52,7 +52,7 @@ RedTerminal solves that by giving users a clean, isolated environment to explore
 
 ---
 
-## 🚀 Latest Project State
+##  Latest Project State
 RedTerminal currently ships with:
 
 - a C-based interactive shell with robust command parsing
@@ -75,7 +75,7 @@ RedTerminal currently ships with:
 
 ---
 
-## 🧩 Project Surface
+##  Project Surface
 ### C Application Experience
 - interactive REPL environment built directly on standard I/O
 - deterministic process lifecycle handling (RUNNING, STOPPED, TERMINATED)
@@ -112,7 +112,7 @@ RedTerminal currently ships with:
 
 ---
 
-## 💡 Why RedTerminal
+##  Why RedTerminal
 RedTerminal is built around a simple educational promise:
 - take complex OS concepts
 - distill them into readable C code
@@ -192,7 +192,7 @@ The current repo state includes:
 
 ---
 
-## 🎯 Current Scope
+##  Current Scope
 RedTerminal is currently positioned as a functional systems simulator and web demo with:
 - an interactive C CLI application
 - a complete web-based terminal simulator
@@ -202,7 +202,7 @@ RedTerminal is currently positioned as a functional systems simulator and web de
 
 ---
 
-## 🧪 Local Setup
+##  Local Setup
 ### Prerequisites
 - A POSIX-compliant environment (Linux / macOS / WSL)
 - `gcc` compiler
@@ -278,7 +278,7 @@ License summary:
   Focused on building polished systems applications, interactive terminal emulators, and educational software experiences.
 </p>
 <p align="center">
-  <a href="https://github.com/Voxion-Labs">GitHub: @Voxion-Labs</a>
+  <a href="https://github.com/liambrooks-lab">GitHub: liambrooks-lab</a>
 </p>
 
 ---
