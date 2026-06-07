@@ -22,11 +22,12 @@ body {
     font-family: 'Fira Code', monospace;
     margin: 0;
     padding: 0;
-    height: 100vh;
+    min-height: 100vh;
     display: flex;
     justify-content: center;
     align-items: center;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 
 #grid-bg {
@@ -55,9 +56,11 @@ body {
     z-index: 1;
     width: 98vw;
     max-width: 1800px;
-    height: 96vh;
+    height: auto;
+    min-height: 96vh;
     opacity: 0;
     transition: opacity 1.5s ease-in;
+    margin: 2vh 0; /* Add margin to allow breathing room when scrolling */
 }
 
 .complex-grid {

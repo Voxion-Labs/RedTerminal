@@ -23,6 +23,8 @@ let processTable = [];
 let logs = [];
 let nextPid = 1;
 let isRunning = true;
+let isBlocked = false;
+let blockedOnPid = null;
 let simulatedCpuLoad = 5;
 let globalUptimeSeconds = 0;
 
@@ -134,6 +136,9 @@ const commands = {
         printLine('  kill <pid>     - Send SIGTERM to a process');
         printLine('  pause <pid>    - Suspend execution (SIGSTOP)');
         printLine('  resume <pid>   - Resume execution (SIGCONT)');
+        printLine('  fork <pid>     - Clone a running process');
+        printLine('  execvp <pid>   - Replace process image (Usage: execvp <pid> <new_name>)');
+        printLine('  waitpid <pid>  - Block terminal until process terminates');
         printLine('  ps             - Display active process table');
         printLine('  analyze <pid>  - Deep process introspection');
         printLine('  logs           - Dump system event logs');
@@ -218,6 +223,47 @@ const commands = {
         proc.state = 'RUNNING';
         logEvent('INFO', `Process resumed: PID=${pid}`);
         printLine(`[>] Process ${pid} resumed.`, 'text-success');
+    },
+    fork: (args) => {
+        if (!args.length) return printLine('ERR: Missing PID. Usage: fork <pid>', 'text-error');
+        const pid = parseInt(args[0]);
+        const proc = processTable.find(p => p.pid === pid);
+        if (!proc) return printLine(`ERR: Process ${pid} not found`, 'text-error');
+        const newPid = nextPid++;
+        processTable.push({
+            pid: newPid, name: proc.name + ' (clone)', state: proc.state === 'TERMINATED' ? 'STOPPED' : proc.state,
+            cpuTime: proc.cpuTime, uptime: 0,
+            cpuUsage: proc.cpuUsage, memoryUsage: proc.memoryUsage,
+            createdAt: getCurrentTime()
+        });
+        logEvent('INFO', `Process ${pid} forked to new PID=${newPid}`);
+        printLine(`[+] Forked PID ${pid} -> New PID ${newPid}`, 'text-success');
+    },
+    execvp: (args) => {
+        if (args.length < 2) return printLine('Usage: execvp <pid> <new_name>', 'text-error');
+        const pid = parseInt(args[0]);
+        const newName = args[1].substring(0, 20);
+        const proc = processTable.find(p => p.pid === pid);
+        if (!proc) return printLine(`ERR: Process ${pid} not found`, 'text-error');
+        if (proc.state === 'TERMINATED') return printLine(`ERR: Cannot exec on terminated process`, 'text-error');
+        proc.name = newName;
+        proc.cpuTime = 0;
+        proc.uptime = 0;
+        proc.memoryUsage = Math.random() * 50 + 10;
+        proc.cpuUsage = Math.random() * 10 + 1;
+        logEvent('INFO', `PID ${pid} execvp to ${newName}`);
+        printLine(`[+] PID ${pid} memory space replaced with '${newName}'`, 'text-success');
+    },
+    waitpid: (args) => {
+        if (!args.length) return printLine('ERR: Missing PID. Usage: waitpid <pid>', 'text-error');
+        const pid = parseInt(args[0]);
+        const proc = processTable.find(p => p.pid === pid);
+        if (!proc) return printLine(`ERR: Process ${pid} not found`, 'text-error');
+        if (proc.state === 'TERMINATED') return printLine(`[+] PID ${pid} is already terminated`, 'text-success');
+        printLine(`[~] Blocking terminal until PID ${pid} terminates...`, 'text-warn');
+        isBlocked = true;
+        blockedOnPid = pid;
+        input.disabled = true;
     },
     ps: () => {
         let out = `<span class="text-table-header">${padEnd('PID', 5)} ${padEnd('NAME', 15)} ${padEnd('STATE', 10)} ${padEnd('CPU%', 6)} ${padEnd('MEM', 8)} ${padEnd('TIME', 6)} ${padEnd('UP', 6)} ${padEnd('CREATED_AT', 20)}</span>\n`;
@@ -420,6 +466,17 @@ setInterval(() => {
     globalUptimeSeconds++;
     sysUptime.textContent = formatUptime(globalUptimeSeconds);
 
+    if (isBlocked && blockedOnPid) {
+        const proc = processTable.find(p => p.pid === blockedOnPid);
+        if (!proc || proc.state === 'TERMINATED') {
+            isBlocked = false;
+            blockedOnPid = null;
+            input.disabled = false;
+            input.focus();
+            printLine(`[+] Process terminated. Terminal unblocked.`, 'text-success');
+        }
+    }
+
     processTable.forEach(p => {
         if (p.state === 'RUNNING') {
             p.cpuTime += 1;
@@ -453,6 +510,10 @@ let historyIndex = -1;
 input.addEventListener('input', () => { typedInput.textContent = input.value; });
 
 input.addEventListener('keydown', (e) => {
+    if (isBlocked) {
+        e.preventDefault();
+        return;
+    }
     if (e.key === 'Enter') {
         const val = input.value.trim();
         input.value = '';
