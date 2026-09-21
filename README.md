@@ -1,96 +1,91 @@
 <p align="center">
   <img src="docs/assets/logo.png" alt="RedTerminal logo" width="220" />
 </p>
-<h1 align="center">RedTerminal</h1>
 <p align="center">
-  A lightweight systems-level C project demonstrating operating systems concepts, process lifecycle management, and simulated CPU scheduling.
+  A systems-level C executable engineered for process lifecycle management and simulated CPU scheduling.
 </p>
 <p align="center">
-  <a href="https://voxion-labs.github.io/RedTerminal/">Live Web Demo</a>
+  <a href="https://voxion-labs.github.io/RedTerminal/">Live Web Interface</a>
   |
   <a href="https://github.com/Voxion-Labs/RedTerminal">Repository</a>
 </p>
 
 ---
 
-## ✨ Overview
-RedTerminal is a C-based process simulator and interactive CLI designed to explore fundamental OS concepts. It features strict process state transitions, thread-safe asynchronous logging, background thread scheduling, and includes a stunning Vanilla JS web-based terminal emulator that brings the OS concepts to a modern browser interface.
+## Overview
+RedTerminal operates as a C-based process simulator and interactive CLI. It enforces strict process state transitions, thread-safe asynchronous logging, and background thread scheduling. The project includes a Vanilla JS web-based terminal emulator that mirrors the OS mechanics within a browser environment.
 
 ---
 
-##  What Is RedTerminal?
-RedTerminal acts as a playground and educational tool for developers who want to understand the inner workings of an operating system's process manager.
+## System Definition
+RedTerminal is an isolated execution environment designed for the analysis of operating system process managers.
 
-At the technical level, RedTerminal acts as:
+At the technical level, RedTerminal functions as:
 - an interactive REPL shell environment
-- a background CPU time scheduler simulator using POSIX threads
-- a robust Process Control Block (PCB) manager
+- a background CPU time scheduler simulator utilizing POSIX threads
+- a Process Control Block (PCB) manager
 - a thread-safe asynchronous event logger
-- a visually striking web-based terminal emulator for browser deployment
+- a web-based terminal emulator for browser deployment
 
 ---
 
-##  Problem It Solves
-Learning about operating systems often involves massive codebases like the Linux kernel, making it hard to focus on fundamental concepts in isolation:
+## Architectural Objective
+Analyzing operating systems typically involves navigating monolithic codebases, complicating the isolation of fundamental mechanisms.
 
-- real OS kernels are overwhelmingly complex
-- theoretical concepts are hard to visualize
-- typical student projects lack professional structure or modern interfaces
-
-RedTerminal solves that by giving users a clean, isolated environment to explore:
-- how processes transition between RUNNING, STOPPED, and TERMINATED states
-- how background schedulers simulate CPU time without blocking user input
-- how concurrency is handled with thread-safe mutex locks
-- how these backend concepts can be visualized in a modern web dashboard
+RedTerminal provides a sterile, isolated environment to analyze:
+- process transitions between RUNNING, STOPPED, and TERMINATED states
+- background schedulers simulating CPU time allocation without blocking I/O
+- concurrency management via thread-safe mutex locks
+- the visualization of backend concepts in a modern web dashboard
 
 ---
 
-## 🔗 Links
-- **[Live Web Demo](https://voxion-labs.github.io/RedTerminal/)**
+## Links
+- **[Live Web Interface](https://voxion-labs.github.io/RedTerminal/)**
 - **[GitHub Repository](https://github.com/Voxion-Labs/RedTerminal)**
-- **[Issues](https://github.com/Voxion-Labs/RedTerminal/issues)**
+- **[Telemetry & Issues](https://github.com/Voxion-Labs/RedTerminal/issues)**
 
 ---
 
-##  Latest Project State
+## Current Project State
 RedTerminal currently ships with:
 
-- a C-based interactive shell with robust command parsing
-- commands for `start`, `kill`, `pause`, `resume`, `ps`, and `logs`
-- an asynchronous `pthread` based scheduler simulating CPU execution
-- strict process lifecycle management up to 256 concurrent processes
-- a fully integrated Vanilla JS web demo that mirrors the OS logic visually
-- comprehensive test suites for core modules
+- a C-based interactive shell with command parsing
+- executable commands: `start`, `kill`, `pause`, `resume`, `ps`, and `logs`
+- an asynchronous `pthread`-based scheduler simulating CPU execution
+- strict process lifecycle management scaling up to 256 concurrent processes
+- an integrated Vanilla JS web interface mirroring the OS logic
+- assertion-based test suites for core modules
 - complete build automation via `Makefile`
 
 ---
 
-## 🌌 Core Highlights
-- polished web demo with glassmorphism UI and OS-style boot sequence
-- real-time terminal input history and custom typing animations in the browser
-- fully decoupled background scheduler in C using POSIX threads
+## Core Specifications
+- web interface utilizing glassmorphism UI and an OS-style initialization sequence
+- real-time terminal input history and typing latency simulation in the browser
+- decoupled background scheduler in C utilizing POSIX threads
 - thread-safe logging infrastructure using mutexes
-- interactive CLI interface that handles edge cases and state validation gracefully
-- lightweight footprint requiring only `gcc` and `make` to compile locally
+- interactive CLI interface handling edge cases and state validation
+- lightweight footprint requiring only `gcc` and `make` for local compilation
 
 ---
 
-##  Project Surface
+## Execution Surfaces
 ### C Application Experience
-- interactive REPL environment built directly on standard I/O
+- interactive REPL environment operating directly on standard I/O
 - deterministic process lifecycle handling (RUNNING, STOPPED, TERMINATED)
 - automated background logging of all critical system events
-- detailed process table (`ps`) outputting active state and CPU time
+- detailed process table (`ps`) outputting active states and CPU time
 
-### Web Demo Experience
-- premium boot screen sequence for OS startup simulation
-- live updating telemetry sidebar tracking CPU load, Memory, and Uptime
-- custom blinking cursor and typing animations mimicking real terminal behavior
-- full command history accessible via arrow keys
+### Web Interface Experience
+- initialization screen sequence for OS startup simulation
+- live telemetry sidebar tracking simulated CPU load, Memory, and Uptime
+- cursor and typing animations mimicking native terminal behavior
+- command history accessible via directional keys
 
 ---
 
-## 🖼️ Demo Gallery
+## Telemetry Gallery
 <table>
   <tr>
     <td width="50%" valign="top">
@@ -98,45 +93,45 @@ RedTerminal currently ships with:
       <br />
       <strong>1. System Boot & Initialization</strong>
       <br />
-      The web version features a polished glassmorphism UI that boots into a ready state with zero active processes and a clean telemetry sidebar.
+      The web environment boots into a ready state with zero active processes and a baseline telemetry sidebar.
     </td>
     <td width="50%" valign="top">
       <img src="docs/assets/web-demo-active.png" alt="RedTerminal Active Processes" />
       <br />
       <strong>2. Active Process Simulation</strong>
       <br />
-      Once processes are spawned, the terminal tracks states in real-time, displaying PID allocations while the telemetry sidebar graphs synthetic CPU and memory load.
+      Upon process initialization, the terminal tracks states in real-time, mapping PID allocations while the telemetry sidebar graphs synthetic CPU and memory load.
     </td>
   </tr>
 </table>
 
 ---
 
-##  Why RedTerminal
-RedTerminal is built around a simple educational promise:
-- take complex OS concepts
-- distill them into readable C code
-- provide an interactive interface to test them
-- visualize the outcome beautifully
+## Operating Directives
+RedTerminal operates on the following architectural directives:
+- isolate complex OS mechanics
+- translate concepts into readable C implementations
+- provide an interactive execution interface
+- output deterministic visualizations
 
-That promise shapes the module structure, the threading model, the data structures used, and the accompanying web demo layer across the project.
+These directives strictly govern the module structure, the threading model, data structures, and the accompanying web layer.
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 ### Core Systems (Backend)
 - C11 Standard
 - POSIX Threads (`pthreads`)
 - GNU Make
 
-### Web Demo (Frontend)
+### Web Interface (Frontend)
 - HTML5
 - CSS3 (Custom Properties, Flexbox, Animations)
 - Vanilla JavaScript (ES6+)
 
 ---
 
-## 🧱 Project Structure
+## Project Structure
 ```text
 RedTerminal/
 ├── Makefile                # Build system configuration
@@ -146,7 +141,7 @@ RedTerminal/
 ├── demo/                   # Technical documentation & assets
 │   ├── architecture.md     # Module layout and thread model
 │   ├── commands.md         # CLI reference guide
-│   └── screenshots/        # Demo gallery assets
+│   └── screenshots/        # Telemetry gallery assets
 ├── include/                # Public C header files (API contracts)
 ├── src/                    # C source implementations
 ├── tests/                  # Automated C test suite
@@ -158,15 +153,15 @@ RedTerminal/
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 ### Systems Responsibilities
-- **Process Manager**: Handles Process Control Blocks (PCBs) and strict state transitions. Safely manages memory and active limits.
-- **Scheduler**: Utilizes POSIX threads to simulate CPU time allocation in the background, fully decoupled from the shell blocking IO.
+- **Process Manager**: Handles Process Control Blocks (PCBs) and strict state transitions. Secures memory and enforces active limits.
+- **Scheduler**: Utilizes POSIX threads to simulate CPU time allocation in the background, fully decoupled from blocking I/O.
 - **Logger**: Asynchronously writes structured system events to `redterm.log` using mutex locks.
-- **Shell**: The primary entry point providing a robust REPL interface.
+- **Shell**: The primary entry point providing the REPL interface.
 
 ### Data Flow
-1. User enters command via the shell interface.
+1. User executes a command via the shell interface.
 2. The shell parses arguments and delegates to the Process Manager.
 3. The Process Manager updates the global PCB array securely.
 4. The background Scheduler thread continuously polls the PCB array, granting CPU time to `RUNNING` processes.
@@ -174,35 +169,35 @@ RedTerminal/
 
 ---
 
-## ✅ Validation Snapshot
-The current repo state includes:
-- modular C code separated clearly into `src` and `include` headers
+## Validation Snapshot
+The current repository state includes:
+- modular C codebase separated into `src` and `include` headers
 - a `tests` directory containing assertion-based tests for `logger`, `process`, and `scheduler`
-- automated testing execution available through `make test`
-- functional web demo deployable to static hosting
+- automated testing execution available via `make test`
+- functional web interface deployable to static hosting
 
 ---
 
-## 📦 Key Capabilities
+## Key Capabilities
 - simulated CPU scheduling and multi-process lifecycle tracking
-- robust state validation preventing illegal transitions (e.g., killing an already terminated process)
-- fully interactive browser-based simulation matching the C application feature-set
+- state validation preventing illegal transitions (e.g., terminating a dead process)
+- interactive browser-based simulation mapping the C application feature-set
 - live telemetry tracking simulated CPU load, memory usage, and uptime
-- CI/CD ready structure with GitHub Actions workflows
+- CI/CD ready structure utilizing GitHub Actions workflows
 
 ---
 
-##  Current Scope
-RedTerminal is currently positioned as a functional systems simulator and web demo with:
-- an interactive C CLI application
+## Current Scope
+RedTerminal is positioned as a systems simulator and web environment with:
+- an interactive C CLI executable
 - a complete web-based terminal simulator
 - background thread simulation
 - thread-safe logging infrastructure
-- comprehensive documentation on architecture and commands
+- documentation on architecture and command execution
 
 ---
 
-##  Local Setup
+## Local Execution
 ### Prerequisites
 - A POSIX-compliant environment (Linux / macOS / WSL)
 - `gcc` compiler
@@ -222,7 +217,7 @@ make run
 
 ---
 
-## 🏁 Build Commands
+## Build Directives
 ### Start Application
 ```bash
 make run
@@ -240,22 +235,22 @@ make clean
 
 ---
 
-## 🌐 Deployment
-### Web Demo Deployment
-- Hosted as a static web experience via GitHub Pages
-- Public product URL: [https://voxion-labs.github.io/RedTerminal/](https://voxion-labs.github.io/RedTerminal/)
+## Deployment
+### Web Interface Deployment
+- Hosted as a static web environment via GitHub Pages
+- Public deployment URL: [https://voxion-labs.github.io/RedTerminal/](https://voxion-labs.github.io/RedTerminal/)
 
-### Deployment profile
-- lightweight browser-first frontend located in the `docs/` folder
-- no external dependencies or build tools required for the web demo
+### Deployment Profile
+- browser-first frontend located in the `docs/` directory
+- zero external dependencies or build tools required for the web environment
 
 ---
 
-## 📄 License
+## License
 
-RedTerminal is protected under the MIT License.
+RedTerminal operates under the MIT License.
 
-The full license text is available in [LICENSE](LICENSE).
+The full license text is available in the [LICENSE](LICENSE) directive.
 
 License summary:
 - copyright © 2026 Rudranarayan Jena
@@ -264,21 +259,15 @@ License summary:
 
 ---
 
-## 👨‍💻 Author
+## Author
 <p align="center">
   <img src="docs/assets/author-rudranarayan-jena.jpg" alt="Rudranarayan Jena" width="180" />
 </p>
 <p align="center">
-  <strong>Crafted by Rudranarayan Jena</strong>
+  <strong>Maintained by <a href="https://github.com/liambrooks-lab">Rudranarayan Jena</a></strong>
 </p>
 <p align="center">
-  <strong>Founder @ Voxion Labs</strong>
-</p>
-<p align="center">
-  Focused on building polished systems applications, interactive terminal emulators, and educational software experiences.
-</p>
-<p align="center">
-  <a href="https://github.com/liambrooks-lab">GitHub: liambrooks-lab</a>
+  <strong>Founder of Voxion Labs</strong>
 </p>
 
 ---
