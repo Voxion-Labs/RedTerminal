@@ -5,7 +5,7 @@
   A systems-level C executable engineered for process lifecycle management and simulated CPU scheduling.
 </p>
 <p align="center">
-  <a href="https://voxion-labs.github.io/RedTerminal/">Live Web Interface</a>
+  <a href="https://voxion-labs.github.io/RedTerminal/">Live Terminal</a>
   |
   <a href="https://github.com/Voxion-Labs/RedTerminal">Repository</a>
 </p>
@@ -259,15 +259,17 @@ License summary:
 
 ---
 
-## Author
-<p align="center">
-  <img src="docs/assets/author-rudranarayan-jena.jpg" alt="Rudranarayan Jena" width="180" />
-</p>
-<p align="center">
-  <strong>Maintained by <a href="https://github.com/liambrooks-lab">Rudranarayan Jena</a></strong>
-</p>
-<p align="center">
-  <strong>Founder of Voxion Labs</strong>
-</p>
+<br>
+<div align="right">
+  <b>Rudranarayan Jena</b><br>
+  <i>Founder @ Voxion Labs</i>
+</div>
 
 ---
+<div align="center">
+  (c) 2026 Voxion Labs & Rudranarayan Jena
+</div>
+<p align="center">
+ Zero-Backend · CRDT Edge Cookies · C · Javascript
+</p>
+
