@@ -15,7 +15,11 @@ TEST_BINS = $(patsubst $(TEST_DIR)/%.c, $(TEST_DIR)/%, $(TEST_SRCS))
 
 TARGET = redterm
 
-.PHONY: all clean run test
+# Emscripten WASM Toolchain
+EMCC = emcc
+EMCC_FLAGS = -I./include -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap"]' -s NO_EXIT_RUNTIME=1 -O2
+
+.PHONY: all clean run test build-wasm
 
 all: $(TARGET)
 
@@ -26,8 +30,12 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(OBJ_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
-run: all
-	./$(TARGET)
+build-wasm:
+	@mkdir -p public
+	$(EMCC) $(EMCC_FLAGS) $(SRC_DIR)/*.c -o public/redterm.js
+
+run: build-wasm
+	go run main.go
 
 test: $(TEST_BINS)
 	@for t in $(TEST_BINS); do echo "Running $$t..."; ./$$t || exit 1; done
@@ -37,4 +45,4 @@ $(TEST_DIR)/%: $(TEST_DIR)/%.c $(OBJS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^
 
 clean:
-	rm -rf $(OBJ_DIR) $(TARGET) redterm.log $(TEST_BINS)
+	rm -rf $(OBJ_DIR) $(TARGET) redterm.log $(TEST_BINS) public/redterm.js public/redterm.wasm

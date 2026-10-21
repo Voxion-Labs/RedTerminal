@@ -9,12 +9,15 @@
     <style>
         :root {
             --bg-color: #0a0a0a;
-            --surface-color: #121212;
-            --border-color: #1f1f1f;
+            --surface-color: #0d0d0d;
+            --header-color: #121212;
+            --border-color: #1c1c1c;
+            --border-light: #262626;
             --text-color: #e0e0e0;
             --muted-color: #888888;
             --dim-color: #555555;
             --accent-green: #22c55e;
+            --accent-red: #ef4444;
             --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         }
 
@@ -24,25 +27,32 @@
             padding: 0;
         }
 
-        body {
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
             background-color: var(--bg-color);
             color: var(--text-color);
             font-family: var(--font-mono);
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            padding: 24px;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
         }
 
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 16px 24px;
+        }
+
+        /* Top Minimalist Header */
         header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding-bottom: 16px;
-            border-bottom: 1px solid var(--border-color);
+            height: 32px;
+            margin-bottom: 12px;
+            user-select: none;
         }
 
         .brand {
@@ -64,7 +74,7 @@
             gap: 8px;
             font-size: 11px;
             color: var(--muted-color);
-            padding: 4px 8px;
+            padding: 4px 10px;
             background: var(--surface-color);
             border: 1px solid var(--border-color);
             border-radius: 4px;
@@ -87,52 +97,129 @@
             font-weight: 500;
         }
 
+        /* Main Terminal Container */
         main {
             flex: 1;
             display: flex;
-            align-items: center;
             justify-content: center;
-            padding: 40px 0;
+            align-items: center;
+            min-height: 0;
         }
 
-        .terminal-placeholder {
+        #terminal-container {
             width: 100%;
-            max-width: 900px;
+            height: 100%;
             background: var(--surface-color);
             border: 1px solid var(--border-color);
             border-radius: 6px;
-            padding: 24px;
-            font-size: 13px;
-            line-height: 1.6;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
         }
 
         .terminal-header {
-            color: var(--dim-color);
-            font-size: 11px;
-            margin-bottom: 16px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid var(--border-color);
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .prompt-line {
+            background: var(--header-color);
+            height: 32px;
+            padding: 0 14px;
             display: flex;
             align-items: center;
-            gap: 8px;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 11px;
+            color: var(--dim-color);
+            user-select: none;
         }
 
-        .prompt-sym {
+        .window-dots {
+            display: flex;
+            gap: 6px;
+        }
+
+        .window-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            opacity: 0.7;
+        }
+        .dot-red { background: #e06c75; }
+        .dot-yellow { background: #e5c07b; }
+        .dot-green { background: #98c379; }
+
+        #terminal-window {
+            flex: 1;
+            padding: 20px 24px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #222 transparent;
+            cursor: text;
+        }
+
+        #terminal-window::-webkit-scrollbar {
+            width: 6px;
+        }
+        #terminal-window::-webkit-scrollbar-thumb {
+            background: #222;
+            border-radius: 3px;
+        }
+
+        #terminal-body {
+            font-size: 13.5px;
+            line-height: 1.65;
+            word-break: break-word;
+        }
+
+        .term-line {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+
+        .prompt {
             color: var(--accent-green);
+            font-weight: 500;
+            user-select: none;
+            white-space: nowrap;
+        }
+
+        .term-cmd {
+            color: #ffffff;
+        }
+
+        .term-output {
+            color: var(--text-color);
+            margin-bottom: 4px;
+            white-space: pre-wrap;
+        }
+
+        .term-dim { color: var(--dim-color); }
+        .term-highlight { color: #ffffff; font-weight: 500; }
+        .term-success { color: var(--accent-green); }
+        .term-error { color: var(--accent-red); }
+        .term-system { color: var(--muted-color); font-style: italic; }
+
+        /* Active Command Input Line */
+        #active-line {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            margin-top: 4px;
+        }
+
+        #active-input {
+            color: #ffffff;
+            white-space: pre-wrap;
         }
 
         .cursor {
             display: inline-block;
             width: 8px;
             height: 15px;
-            background: var(--accent-green);
+            background-color: var(--accent-green);
             vertical-align: middle;
             animation: blink 1s step-end infinite;
+            margin-left: 1px;
         }
 
         @keyframes blink {
@@ -140,12 +227,16 @@
             50% { opacity: 0; }
         }
 
+        /* Minimal Status Bar */
         footer {
+            height: 24px;
+            margin-top: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             font-size: 11px;
             color: var(--dim-color);
-            text-align: center;
-            padding-top: 16px;
-            border-top: 1px solid var(--border-color);
+            user-select: none;
         }
     </style>
 </head>
@@ -167,23 +258,34 @@
     </header>
 
     <main>
-        <section class="terminal-placeholder">
+        <div id="terminal-container">
             <div class="terminal-header">
-                <span>session: local</span>
-                <span>arch: wasm/go</span>
+                <div class="window-dots">
+                    <div class="window-dot dot-red"></div>
+                    <div class="window-dot dot-yellow"></div>
+                    <div class="window-dot dot-green"></div>
+                </div>
+                <span>session: interactive (WASM/Go)</span>
+                <span>tty0</span>
             </div>
-            <p style="color: var(--muted-color); margin-bottom: 12px;">// Phase 1 initialized: Go standard library backend &amp; HTMX frontend active.</p>
-            <div class="prompt-line">
-                <span class="prompt-sym">&gt;</span>
-                <span>ready</span>
-                <span class="cursor"></span>
+            <div id="terminal-window">
+                <div id="terminal-body">
+                    <div id="active-line">
+                        <span class="prompt">redterm &gt;</span>
+                        <span id="active-input"></span><span class="cursor" id="active-cursor"></span>
+                    </div>
+                </div>
             </div>
-        </section>
+        </div>
     </main>
 
     <footer>
-        distraction-free &bull; ultra-lightweight &bull; redterminal
+        <span>WASM Core: Ready</span>
+        <span>distraction-free &bull; ultra-lightweight</span>
+        <span>Port :8080</span>
     </footer>
 
+    <!-- Vanilla JS Terminal Emulator -->
+    <script src="app.js"></script>
 </body>
 </html>
