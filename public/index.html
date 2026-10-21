@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RedTerminal</title>
+    <!-- HTMX via CDN -->
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <style>
+        :root {
+            --bg-color: #0a0a0a;
+            --surface-color: #121212;
+            --border-color: #1f1f1f;
+            --text-color: #e0e0e0;
+            --muted-color: #888888;
+            --dim-color: #555555;
+            --accent-green: #22c55e;
+            --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: var(--font-mono);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 24px;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .brand {
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            color: var(--text-color);
+        }
+
+        .brand span {
+            color: var(--muted-color);
+            font-weight: 400;
+        }
+
+        /* HTMX Status Indicator */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            color: var(--muted-color);
+            padding: 4px 8px;
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            user-select: none;
+        }
+
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background-color: var(--accent-green);
+        }
+
+        .status-label {
+            color: var(--dim-color);
+        }
+
+        #ping-target {
+            color: var(--accent-green);
+            font-weight: 500;
+        }
+
+        main {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 0;
+        }
+
+        .terminal-placeholder {
+            width: 100%;
+            max-width: 900px;
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 24px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .terminal-header {
+            color: var(--dim-color);
+            font-size: 11px;
+            margin-bottom: 16px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .prompt-line {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .prompt-sym {
+            color: var(--accent-green);
+        }
+
+        .cursor {
+            display: inline-block;
+            width: 8px;
+            height: 15px;
+            background: var(--accent-green);
+            vertical-align: middle;
+            animation: blink 1s step-end infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        footer {
+            font-size: 11px;
+            color: var(--dim-color);
+            text-align: center;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-color);
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="brand">REDTERM <span>v1.0</span></div>
+
+        <!-- HTMX Polling Status Indicator: pings /ping on load and every 30s -->
+        <div class="status-badge"
+             hx-get="/ping"
+             hx-trigger="load, every 30s"
+             hx-target="#ping-target"
+             hx-swap="innerHTML">
+            <span class="status-dot"></span>
+            <span class="status-label">status:</span>
+            <span id="ping-target">connecting...</span>
+        </div>
+    </header>
+
+    <main>
+        <section class="terminal-placeholder">
+            <div class="terminal-header">
+                <span>session: local</span>
+                <span>arch: wasm/go</span>
+            </div>
+            <p style="color: var(--muted-color); margin-bottom: 12px;">// Phase 1 initialized: Go standard library backend &amp; HTMX frontend active.</p>
+            <div class="prompt-line">
+                <span class="prompt-sym">&gt;</span>
+                <span>ready</span>
+                <span class="cursor"></span>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        distraction-free &bull; ultra-lightweight &bull; redterminal
+    </footer>
+
+</body>
+</html>
