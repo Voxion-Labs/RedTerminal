@@ -5,117 +5,50 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RedTerminal</title>
     <link rel="icon" type="image/png" href="assets/logo.png">
-    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Fira+Code:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="grid-bg"></div>
-    <div class="crt-overlay"></div>
-    
     <div id="boot-screen">
         <div id="boot-text"></div>
     </div>
     
-    <div id="dashboard" class="complex-grid">
-        
-        <!-- Top Panel -->
-        <header id="top-panel" class="sys-panel">
-            <div class="global-metrics">
-                <span>KERNEL: v1.0.4-rt</span>
-                <span>UPTIME: <span id="sys-uptime" class="text-highlight">00:00:00</span></span>
-                <span>NET.TX: <span id="net-tx" class="text-warn">0.0 KB/s</span></span>
-                <span>NET.RX: <span id="net-rx" class="text-success">0.0 KB/s</span></span>
+    <main id="terminal-container">
+        <header id="terminal-header">
+            <div class="window-controls">
+                <div class="btn close"></div>
+                <div class="btn min"></div>
+                <div class="btn max"></div>
             </div>
-            <div class="top-branding">RED<span>TERM</span> COMMAND CENTER</div>
+            <div class="window-title">root@redterm:~ (bash)</div>
         </header>
-
-        <!-- Left Sidebar: Telemetry -->
-        <aside id="sidebar" class="sys-panel">
-            <div class="branding">
-                <h1>RED<span>TERM</span></h1>
-                <div class="subtitle">SYS_CORE INIT</div>
+        
+        <div id="terminal">
+            <div id="output"></div>
+            <div id="input-line">
+                <span id="prompt">
+                    <span class="prompt-host">redterm</span>
+                    <span class="prompt-arrow">&gt;</span>
+                </span>
+                <span id="typed-input"></span><span class="cursor"></span>
+                <input type="text" id="command-input" autocomplete="off" spellcheck="false" autofocus>
             </div>
-            
-            <div class="telemetry-box">
-                <h3>SYS.LOAD</h3>
-                <div class="progress-bar"><div class="fill red-fill" id="cpu-load"></div></div>
-                <div class="metrics">
-                    <span id="cpu-val">12%</span>
-                    <span>128 THREADS</span>
-                </div>
-            </div>
+        </div>
+    </main>
 
-            <!-- CPU Core Matrix -->
-            <div class="core-matrix-container">
-                <h3>CPU.CORES</h3>
-                <div class="core-matrix" id="core-matrix">
-                    <div class="core-box" id="core-0"></div><div class="core-box" id="core-1"></div><div class="core-box" id="core-2"></div><div class="core-box" id="core-3"></div>
-                    <div class="core-box" id="core-4"></div><div class="core-box" id="core-5"></div><div class="core-box" id="core-6"></div><div class="core-box" id="core-7"></div>
-                </div>
-            </div>
-
-            <div class="telemetry-box">
-                <h3>MEM.ALLOC</h3>
-                <div class="progress-bar"><div class="fill green-fill" id="mem-load"></div></div>
-                <div class="metrics">
-                    <span id="mem-val">4.2 GB</span>
-                    <span>16.0 GB MAX</span>
-                </div>
-            </div>
-            
-            <div class="telemetry-box">
-                <h3>ACTIVE.PROC</h3>
-                <div class="metrics-large" id="active-proc-count">00</div>
-            </div>
-            
-            <div class="status-indicator">
-                <div class="blinking-dot"></div>
-                SYSTEM ONLINE
-            </div>
-        </aside>
-
-        <!-- Main Terminal Area -->
-        <main id="terminal-container" class="sys-panel">
-            <header id="terminal-header">
-                <div class="window-controls">
-                    <div class="btn close"></div>
-                    <div class="btn min"></div>
-                    <div class="btn max"></div>
-                </div>
-                <div class="window-title">root@redterm:~ (Simulator)</div>
-            </header>
-            
-            <div id="terminal" onclick="document.getElementById('command-input').focus()">
-                <div id="output"></div>
-                <div id="input-line" onclick="document.getElementById('command-input').focus()">
-                    <span id="prompt">RedTerm<span class="prompt-arrow">➜</span></span>
-                    <span id="typed-input"></span><span class="cursor"></span>
-                    <input type="text" id="command-input" autocomplete="off" spellcheck="false" autofocus>
-                </div>
-            </div>
-        </main>
-
-        <!-- Right Panel: Data Streams -->
-        <aside id="right-panel" class="sys-panel">
-            <div class="panel-header text-highlight">MEMORY.HEX_DUMP</div>
-            <div id="hex-stream" class="data-stream-box text-info"></div>
-            
-            <div class="panel-header text-highlight" style="margin-top:20px;">KERNEL.LOG_STREAM</div>
-            <div id="kernel-log-stream" class="data-stream-box text-muted"></div>
-        </aside>
-
-        <!-- Bottom Panel: Sockets / Network -->
-        <footer id="bottom-panel" class="sys-panel">
-            <div class="panel-header text-highlight" style="margin-bottom: 5px;">ACTIVE_SOCKETS (TCP/UDP)</div>
-            <div id="net-sockets" class="socket-grid text-muted">
-                <!-- Populated by JS -->
-            </div>
-        </footer>
-
-    </div>
-
-    <footer id="copyright" style="position: absolute; bottom: 5px; width: 100%; text-align: center; color: rgba(108,117,125,0.4); font-size: 10px; z-index: 10; font-family: 'Fira Code', monospace; pointer-events: none;">
-        &copy; 2026 Rudranarayan Jena
+    <!-- Minimal Status Bar -->
+    <footer id="status-bar">
+        <div class="status-left">
+            <span class="status-brand">REDTERM v1.0</span>
+        </div>
+        <div class="status-center">
+            <span>Uptime: <span id="status-uptime">00:00:00</span></span>
+        </div>
+        <div class="status-right">
+            <span>WASM Memory: <span id="status-wasm-mem">16.4 MB</span></span>
+        </div>
     </footer>
 
     <script src="app.js"></script>
