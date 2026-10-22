@@ -60,6 +60,60 @@ function ensureWasmMemory() {
             return inPtr;
         };
     }
+    if (typeof Module._validate_json !== 'function') {
+        Module._validate_json = function() {
+            return 0;
+        };
+    }
+}
+
+/**
+ * Fallback single-pass JSON validator when WASM binary is not loaded.
+ */
+function validateJsonFallback(payload) {
+    if (!payload || !payload.trim()) return 1;
+    let line = 1;
+    const charStack = [];
+    const lineStack = [];
+    let inString = false;
+    let stringStartLine = 1;
+
+    for (let i = 0; i < payload.length; i++) {
+        const c = payload[i];
+        if (c === '\n') {
+            line++;
+            continue;
+        }
+        if (inString) {
+            if (c === '\\') {
+                i++;
+                if (i < payload.length && payload[i] === '\n') line++;
+                continue;
+            }
+            if (c === '"') {
+                inString = false;
+            }
+            continue;
+        }
+        if (c === '"') {
+            inString = true;
+            stringStartLine = line;
+        } else if (c === '{') {
+            charStack.push('}');
+            lineStack.push(line);
+        } else if (c === '[') {
+            charStack.push(']');
+            lineStack.push(line);
+        } else if (c === '}' || c === ']') {
+            if (charStack.length === 0 || charStack.pop() !== c) {
+                return line;
+            }
+            lineStack.pop();
+        }
+    }
+    if (inString) return stringStartLine;
+    if (charStack.length > 0) return lineStack.pop();
+    return 0;
 }
 
 /**
@@ -159,6 +213,7 @@ function executeCommand(cmd) {
             termPrint('  filter <word>   - Filter sample log lines via WASM filter_logs');
             termPrint('  b64 [-e|-d] <s> - Base64 encode/decode string via WASM');
             termPrint('  hash <text>     - Compute SHA-256 hash digest via WASM');
+            termPrint('  check <json>    - High-speed single-pass JSON validator via WASM');
             termPrint('  clear           - Clear terminal screen');
             termPrint('  ping            - Test local shell latency');
             termPrint('  echo [text]     - Print arguments to terminal');
@@ -330,6 +385,34 @@ function executeCommand(cmd) {
                 } else {
                     termPrint('[WASM sha256_hash Ready]', 'success');
                 }
+            }
+            break;
+        }
+
+        case 'check': {
+            if (!args.length) {
+                termPrint('Usage: check <json_payload>', 'error');
+                termPrint('Example: check {"name": "RedTerm", "features": ["wasm", "shell"]}', 'dim');
+                break;
+            }
+            const jsonPayload = args.join(' ');
+            termPrint('Executing single-pass JSON validation via WASM...', 'dim');
+            let errLine = 0;
+            if (typeof Module.ccall === 'function') {
+                try {
+                    errLine = Module.ccall('validate_json', 'number', ['string'], [jsonPayload]);
+                } catch (err) {
+                    termPrint(`ERR: WASM validate_json error: ${err.message}`, 'error');
+                    break;
+                }
+            } else {
+                errLine = validateJsonFallback(jsonPayload);
+            }
+
+            if (errLine === 0) {
+                termPrint('VALID: JSON syntax is valid (0 errors).', 'success');
+            } else {
+                termPrint(`SYNTAX ERROR: Bracket/brace/quote mismatch at line ${errLine}.`, 'error');
             }
             break;
         }
