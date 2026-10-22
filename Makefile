@@ -17,7 +17,7 @@ TARGET = redterm
 
 # Emscripten WASM Toolchain
 EMCC = emcc
-EMCC_FLAGS = -I./include -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap"]' -s EXPORTED_FUNCTIONS='["_main","_malloc","_free","_process_data"]' -s NO_EXIT_RUNTIME=1 -O2
+EMCC_FLAGS = -I./include -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","stringToUTF8"]' -s EXPORTED_FUNCTIONS='["_main","_malloc","_free","_process_data","_filter_logs"]' -s NO_EXIT_RUNTIME=1 -O2
 
 .PHONY: all clean run test build-wasm
 
@@ -32,7 +32,7 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 
 build-wasm:
 	@mkdir -p public
-	$(EMCC) $(EMCC_FLAGS) $(SRC_DIR)/*.c -o public/redterm.js
+	$(EMCC) $(EMCC_FLAGS) $(wildcard $(SRC_DIR)/*.c) -o public/redterm.js
 
 run: build-wasm
 	go run main.go

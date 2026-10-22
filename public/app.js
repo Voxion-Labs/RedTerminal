@@ -55,6 +55,11 @@ function ensureWasmMemory() {
             return ptr;
         };
     }
+    if (typeof Module._filter_logs !== 'function') {
+        Module._filter_logs = function(inPtr) {
+            return inPtr;
+        };
+    }
 }
 
 /**
@@ -151,6 +156,7 @@ function executeCommand(cmd) {
             termPrint('REDTERM Commands:', 'highlight');
             termPrint('  help            - Display available commands');
             termPrint('  upload          - Upload file to WASM memory & trigger processed download');
+            termPrint('  filter <word>   - Filter sample log lines via WASM filter_logs');
             termPrint('  clear           - Clear terminal screen');
             termPrint('  ping            - Test local shell latency');
             termPrint('  echo [text]     - Print arguments to terminal');
@@ -217,6 +223,32 @@ function executeCommand(cmd) {
                 };
                 reader.readAsArrayBuffer(file);
             });
+            break;
+
+        case 'filter':
+            if (!args.length) {
+                termPrint('Usage: filter <keyword>', 'error');
+                break;
+            }
+            const kw = args.join(' ');
+            const sampleLogs = "2026-10-22 13:10:01 [INFO] Subsystem kernel initialized\n" +
+                               "2026-10-22 13:10:02 [ERROR] Connection timeout to peer node\n" +
+                               "2026-10-22 13:10:04 [WARN] High thread contention detected\n" +
+                               "2026-10-22 13:10:05 [ERROR] Fatal memory segment access violation\n" +
+                               "2026-10-22 13:10:07 [INFO] Backup sync cycle finished\n";
+            termPrint(`Filtering logs with keyword: '${kw}' via WASM filter_logs...`, 'dim');
+            if (typeof Module.ccall === 'function') {
+                try {
+                    const res = Module.ccall('filter_logs', 'string', ['string', 'string'], [sampleLogs, kw]);
+                    termPrint(res && res.trim() ? res.trim() : '(No matching entries found)', res && res.trim() ? 'success' : 'dim');
+                } catch (e) {
+                    termPrint(`ERR: ${e.message}`, 'error');
+                }
+            } else {
+                // Fallback demonstration
+                const lines = sampleLogs.split('\n').filter(l => l.includes(kw)).join('\n');
+                termPrint(lines ? lines : '(No matching entries found)', lines ? 'success' : 'dim');
+            }
             break;
 
         case 'clear':
