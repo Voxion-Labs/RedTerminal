@@ -1,67 +1,151 @@
-# RedTerminal Commands
+# RedTerminal Command Reference
 
-The RedTerminal shell is an interactive, REPL-style interface. Below is the complete list of supported commands, their syntax, and their exact behavior based on the current implementation.
+This document defines the complete command surface for RedTerminal across its native POSIX shell and WebAssembly browser terminal interface.
 
-## `start <name>`
-- **Description:** Creates a new simulated process and places it into the process table.
+---
+
+## Command Matrix Summary
+
+| Command | Execution Surface | Purpose | Input Arguments |
+| :--- | :--- | :--- | :--- |
+| `start` | Native | Spawns a new process entry in the PCB table. | `<name>` (string, max 31 chars) |
+| `kill` | Native | Terminates an active or stopped process. | `<pid>` (integer) |
+| `pause` | Native | Suspends process execution; freezes CPU time counter. | `<pid>` (integer) |
+| `resume` | Native | Restores suspended process to active execution. | `<pid>` (integer) |
+| `ps` | Native / Web | Dumps active Process Control Block records. | None |
+| `logs` | Native | Streams raw events from `redterm.log`. | None |
+| `upload` | Web | Ingests file into WASM memory via `_malloc` and triggers processed download. | None (triggers file picker dialog) |
+| `filter` | Web | Performs pointer-based substring extraction on log lines via WASM. | `<keyword>` (string) |
+| `b64` | Web | Encodes or decodes text via RFC 4648 Base64 WASM engine. | `[-e\|-d] <text>` (flag and string) |
+| `hash` | Web | Generates a 64-character lowercase SHA-256 hex digest via WASM. | `<text>` (string) |
+| `check` | Web | Performs $O(N)$ single-pass bracket/brace/quote syntax validation. | `<json_string>` (string) |
+| `echo` | Web | Outputs argument string directly to terminal buffer. | `[text]` (string) |
+| `ping` | Web | Verifies terminal I/O latency. | None |
+| `info` | Web | Displays runtime architecture and active subsystem specifications. | None |
+| `clear` | Web | Flushes terminal display buffer. | None |
+| `help` | Native / Web | Prints command index and argument syntax. | None |
+| `exit` | Native | Joins scheduler thread, closes file handles, and halts binary. | None |
+
+---
+
+## Detailed Command Specifications
+
+### Process Management Commands (Native Interface)
+
+#### `start <name>`
+- **Syntax:** `start <name>`
+- **Description:** Allocates a Process Control Block within the static table.
 - **Parameters:**
-  - `<name>`: An alphanumeric string representing the process name (max 31 characters).
-- **Behavior:** 
-  - Assigns a monotonically increasing, unique PID starting from 1.
-  - Automatically sets the initial state to `RUNNING`.
-  - Fails if the process table has reached its maximum capacity (256 processes).
-- **Example:** `start web_server`
+  - `<name>`: Alphanumeric process identifier (maximum length: 31 bytes).
+- **Semantics:**
+  - Assigns monotonically increasing integer PID starting at 1.
+  - Initialises process state to `PROCESS_STATE_RUNNING`.
+  - Initialises `cpu_time` to 0.
+  - Returns error if process table is full (maximum: 256 entries).
 
-## `kill <pid>`
-- **Description:** Terminates an existing process.
+#### `kill <pid>`
+- **Syntax:** `kill <pid>`
+- **Description:** Terminates execution of a target process.
 - **Parameters:**
-  - `<pid>`: The integer Process ID to terminate.
-- **Behavior:** 
-  - Transitions the target process to the `TERMINATED` state.
-  - Will fail and print an error if the process does not exist.
-  - Will warn if the process is already `TERMINATED`.
-- **Example:** `kill 1`
+  - `<pid>`: Target Process ID.
+- **Semantics:**
+  - Sets target PCB state to `PROCESS_STATE_TERMINATED`.
+  - Halts all further CPU time accumulation.
+  - Returns error if `<pid>` does not exist.
+  - Returns warning if `<pid>` is already terminated.
 
-## `pause <pid>`
-- **Description:** Suspends a running process, preventing it from accumulating further CPU time.
+#### `pause <pid>`
+- **Syntax:** `pause <pid>`
+- **Description:** Suspends CPU time allocation for a running process.
 - **Parameters:**
-  - `<pid>`: The integer Process ID to pause.
-- **Behavior:**
-  - Transitions the target process from `RUNNING` to `STOPPED`.
-  - Will warn and fail if the target process is already `STOPPED` or `TERMINATED`.
-- **Example:** `pause 2`
+  - `<pid>`: Target Process ID.
+- **Semantics:**
+  - Transitions target process from `PROCESS_STATE_RUNNING` to `PROCESS_STATE_STOPPED`.
+  - Rejects transition if target is not currently in `RUNNING` state.
 
-## `resume <pid>`
-- **Description:** Resumes a paused process, allowing it to accumulate CPU time again.
+#### `resume <pid>`
+- **Syntax:** `resume <pid>`
+- **Description:** Re-enables CPU time accumulation for a suspended process.
 - **Parameters:**
-  - `<pid>`: The integer Process ID to resume.
-- **Behavior:**
-  - Transitions the target process from `STOPPED` to `RUNNING`.
-  - Will warn and fail if the target process is not currently `STOPPED`.
-- **Example:** `resume 2`
+  - `<pid>`: Target Process ID.
+- **Semantics:**
+  - Transitions target process from `PROCESS_STATE_STOPPED` to `PROCESS_STATE_RUNNING`.
+  - Rejects transition if target is not currently in `STOPPED` state.
 
-## `ps`
-- **Description:** Prints the current Process Control Block (PCB) table.
-- **Behavior:**
-  - Outputs a formatted table containing all historical and active processes.
-  - Displays: `PID`, `NAME`, `STATE`, `CPU_TIME` (in simulated seconds), and `CREATED_AT` (local timestamp).
-- **Example:** `ps`
+#### `ps`
+- **Syntax:** `ps`
+- **Description:** Formats and outputs the current snapshot of the process table.
+- **Columns:**
+  - `PID`: Monotonic process identifier.
+  - `NAME`: Allocated process name.
+  - `STATE`: Current status (`RUNNING`, `STOPPED`, `TERMINATED`).
+  - `CPU_TIME`: Total simulated CPU execution seconds.
+  - `CREATED_AT`: System timestamp of process creation.
 
-## `logs`
-- **Description:** Dumps the internal system event log to the console.
-- **Behavior:**
-  - Safely opens `redterm.log` and streams its contents to `stdout`. 
-  - Displays all INFO, WARN, and ERROR events generated by the subsystem (e.g., thread creation, process transitions).
-- **Example:** `logs`
+#### `logs`
+- **Syntax:** `logs`
+- **Description:** Flushes and outputs historical records from `redterm.log`.
+- **Format:** `[YYYY-MM-DD HH:MM:SS] [LEVEL] <message>`
 
-## `help`
-- **Description:** Prints a brief usage summary of all available commands.
-- **Example:** `help`
+---
 
-## `exit`
-- **Description:** Halts the shell loop and initiates a graceful system shutdown.
-- **Behavior:**
-  - Stops the background scheduler thread safely using `pthread_join`.
-  - Closes all open file handles (e.g., the logger).
-  - Exits the application with code `0`.
-- **Example:** `exit`
+### WebAssembly Engine Commands (Web Interface)
+
+#### `upload`
+- **Syntax:** `upload`
+- **Description:** Demonstrates full-duplex WASM memory handoff via hidden DOM file picker.
+- **Execution Flow:**
+  1. Opens local file picker input.
+  2. Reads selected file into `ArrayBuffer`.
+  3. Allocates memory inside the WebAssembly heap using `Module._malloc(byte_size)`.
+  4. Copies byte stream into `Module.HEAPU8`.
+  5. Executes C function `process_data(uint8_t *data, int size)`.
+  6. Reads returned memory address from `Module.HEAPU8`, wraps into a `Blob`, and triggers automated browser download.
+  7. Deallocates heap space via `Module._free`.
+
+#### `filter <keyword>`
+- **Syntax:** `filter <keyword>`
+- **Description:** Executes high-throughput pointer arithmetic line extraction via WASM `filter_logs`.
+- **Parameters:**
+  - `<keyword>`: Substring term to search for across lines.
+- **Semantics:**
+  - Calls `char* filter_logs(char *input, char *keyword)` compiled from `src/filter.c`.
+  - Scans character buffers using raw pointer increments; outputs matching lines directly.
+
+#### `b64 [-e|-d] <text>`
+- **Syntax:**
+  - `b64 -e <text>` or `b64 encode <text>`: Encodes raw string into RFC 4648 Base64 format.
+  - `b64 -d <text>` or `b64 decode <text>`: Decodes Base64 string into plain text.
+  - `b64 <text>`: Defaults to encoding.
+- **Semantics:**
+  - Executes `char* base64_encode(const char *input)` or `char* base64_decode(const char *input)` from `src/crypto.c`.
+  - Runs with zero external libraries; returns newly allocated heap string.
+
+#### `hash <text>`
+- **Syntax:** `hash <text>`
+- **Description:** Computes a cryptographic SHA-256 digest over the input string.
+- **Parameters:**
+  - `<text>`: Input message payload.
+- **Semantics:**
+  - Executes `char* sha256_hash(const char *input)` from `src/crypto.c`.
+  - Implements standard 512-bit block compression; outputs 64-character lowercase hex digest.
+
+#### `check <json_string>`
+- **Syntax:** `check <json_string>`
+- **Description:** Executes high-speed AST-free structural syntax validation on JSON payloads.
+- **Parameters:**
+  - `<json_string>`: Raw JSON payload to parse.
+- **Semantics:**
+  - Invokes `int validate_json(char *payload)` from `src/validator.c`.
+  - Evaluates matching brackets (`[]`), braces (`{}`), and string literal quotes (`""`).
+  - Output values:
+    - `0`: Valid syntax.
+    - `> 0`: 1-based line number of the first encountered syntax failure.
+
+#### `clear`
+- **Syntax:** `clear`
+- **Description:** Resets terminal output container and scrolls viewport to origin.
+
+#### `exit`
+- **Syntax:** `exit`
+- **Description:** Halts native runtime loop, signals background scheduler shutdown, joins POSIX thread, closes log file descriptors, and terminates with status code `0`.

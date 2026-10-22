@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/logo.png" alt="RedTerminal logo" width="220" />
+  <img src="docs/assets/logo.png" alt="RedTerminal logo" width="130" />
 </p>
 <p align="center">
   A systems-level C executable engineered for process lifecycle management and simulated CPU scheduling.
@@ -7,242 +7,194 @@
 <p align="center">
   <a href="https://voxion-labs.github.io/RedTerminal/">Live Terminal</a>
   |
-  <a href="https://github.com/Voxion-Labs/RedTerminal">Repository</a>
+  <a href="https://github.com/Voxion-Labs/RedTerminal/issues">Telemetry and Issues</a>
 </p>
 
 ---
 
 ## Overview
-RedTerminal operates as a C-based process simulator and interactive CLI. It enforces strict process state transitions, thread-safe asynchronous logging, and background thread scheduling. The project includes a Vanilla JS web-based terminal emulator that mirrors the OS mechanics within a browser environment.
+
+RedTerminal is a dual-surface systems environment providing isolated process management and high-throughput byte manipulation. It implements two operational modes:
+
+1. **Native POSIX Subsystem:** A compiled C11 binary providing multithreaded process scheduling (`pthreads`), thread-safe asynchronous logging, process control block (PCB) tracking, and a command-line REPL.
+2. **WebAssembly / Go Subsystem:** C modules compiled to WebAssembly via Emscripten (`redterm.wasm`), served by a Go standard library HTTP backend (`main.go`), and operated through a zero-dependency vanilla JavaScript terminal emulator with HTMX health polling.
 
 ---
 
-## System Definition
-RedTerminal is an isolated execution environment designed for the analysis of operating system process managers.
+## Repository Structure
 
-At the technical level, RedTerminal functions as:
-- an interactive REPL shell environment
-- a background CPU time scheduler simulator utilizing POSIX threads
-- a Process Control Block (PCB) manager
-- a thread-safe asynchronous event logger
-- a web-based terminal emulator for browser deployment
+```text
+RedTerminal/
+├── Makefile                # Unified build system (native C + Emscripten WASM)
+├── go.mod                  # Go module definition (redterminal)
+├── main.go                 # Standard library HTTP static file & ping server (:8080)
+├── demo/                   # Technical reference specifications
+│   ├── architecture.md     # Memory model, thread layout, and lifecycle spec
+│   └── commands.md         # Comprehensive CLI and WASM command index
+├── include/                # Public C header contracts
+│   ├── crypto.h            # RFC 4648 Base64 & FIPS 180-4 SHA-256 exports
+│   ├── filter.h            # Fast pointer-arithmetic line filtering
+│   ├── logger.h            # Mutex-locked asynchronous event logging
+│   ├── process.h           # PCB data structures and state transitions
+│   ├── scheduler.h         # Background POSIX thread CPU allocator
+│   ├── shell.h             # Native interactive REPL interface
+│   ├── utils.h             # General utility and WASM memory handoff
+│   └── validator.h         # Single-pass AST-free JSON syntax validator
+├── src/                    # C11 module implementations
+│   ├── crypto.c            # Pure C cryptographic routines
+│   ├── filter.c            # Raw pointer scan log extraction
+│   ├── logger.c            # Thread-safe log dispatch
+│   ├── main.c              # Native CLI entrypoint and shutdown sequence
+│   ├── process.c           # Static PCB allocation and table mutation
+│   ├── scheduler.c         # Background CPU tick thread
+│   ├── shell.c             # Native command dispatch loop
+│   ├── utils.c             # String sanitisation and time formatting
+│   └── validator.c         # High-speed bracket/brace/quote syntax parser
+├── public/                 # Web interface assets
+│   ├── app.js              # Vanilla JS terminal emulator & WASM bridge
+│   └── index.html          # Dark developer theme & HTMX 30s status polling
+├── docs/                   # GitHub Pages static documentation build
+└── tests/                  # Automated assertion-based test suites
+    ├── test_crypto.c       # Verification of Base64 and SHA-256 vectors
+    ├── test_filter.c       # Boundary tests for pointer line filter
+    ├── test_logger.c       # Concurrent log write verification
+    ├── test_process.c      # Process transition state assertions
+    ├── test_scheduler.c    # Timer and tick increment validation
+    └── test_validator.c    # Single-pass JSON syntax edge case suite
+```
 
 ---
 
-## Architectural Objective
-Analyzing operating systems typically involves navigating monolithic codebases, complicating the isolation of fundamental mechanisms.
+## Technical Specifications
 
-RedTerminal provides a sterile, isolated environment to analyze:
-- process transitions between RUNNING, STOPPED, and TERMINATED states
-- background schedulers simulating CPU time allocation without blocking I/O
-- concurrency management via thread-safe mutex locks
-- the visualization of backend concepts in a modern web dashboard
+### Architecture Matrix
 
----
-
-## Links
-- **[Live Web Interface](https://voxion-labs.github.io/RedTerminal/)**
-- **[GitHub Repository](https://github.com/Voxion-Labs/RedTerminal)**
-- **[Telemetry & Issues](https://github.com/Voxion-Labs/RedTerminal/issues)**
-
----
-
-## Current Project State
-RedTerminal currently ships with:
-
-- a C-based interactive shell with command parsing
-- executable commands: `start`, `kill`, `pause`, `resume`, `ps`, and `logs`
-- an asynchronous `pthread`-based scheduler simulating CPU execution
-- strict process lifecycle management scaling up to 256 concurrent processes
-- an integrated Vanilla JS web interface mirroring the OS logic
-- assertion-based test suites for core modules
-- complete build automation via `Makefile`
-
----
-
-## Core Specifications
-- web interface utilizing glassmorphism UI and an OS-style initialization sequence
-- real-time terminal input history and typing latency simulation in the browser
-- decoupled background scheduler in C utilizing POSIX threads
-- thread-safe logging infrastructure using mutexes
-- interactive CLI interface handling edge cases and state validation
-- lightweight footprint requiring only `gcc` and `make` for local compilation
+| Subsystem | Source Path | Target Surface | Key Primitives | Memory / Threading Model |
+| :--- | :--- | :--- | :--- | :--- |
+| **Process Manager** | `src/process.c` | Native | `pcb_t`, `process_table` | Static table (256 PCBs), mutex-synchronized (`pt_mutex`). |
+| **Scheduler** | `src/scheduler.c` | Native | `pthread_create`, `sleep` | Dedicated POSIX worker thread, increments `cpu_time` of `RUNNING` tasks. |
+| **Logger** | `src/logger.c` | Native | `vfprintf`, `pthread_mutex` | File-backed stream (`redterm.log`) protected by `log_mutex`. |
+| **Log Filter** | `src/filter.c` | WASM / Native | Raw pointer increments | Single-pass $O(N)$ string scan; upper-bounded single heap allocation. |
+| **Crypto Engine** | `src/crypto.c` | WASM / Native | Bitwise rotation, arrays | 32-bit word transforms; zero third-party dependencies; FIPS 180-4 compliant. |
+| **JSON Validator** | `src/validator.c` | WASM / Native | Stack-based bracket match | Single-pass $O(N)$ syntax parser; returns line-level syntax error offsets without AST. |
+| **Web Server** | `main.go` | Host | `net/http` | Standard library file server and health endpoint (`/ping`) on port 8080. |
+| **Terminal Client** | `public/app.js` | Browser | Native DOM, `FileReader` | Zero-dependency event loop; Emscripten linear memory bridge (`HEAPU8`). |
 
 ---
 
 ## Execution Surfaces
-### C Application Experience
-- interactive REPL environment operating directly on standard I/O
-- deterministic process lifecycle handling (RUNNING, STOPPED, TERMINATED)
-- automated background logging of all critical system events
-- detailed process table (`ps`) outputting active states and CPU time
 
-### Web Interface Experience
-- initialization screen sequence for OS startup simulation
-- live telemetry sidebar tracking simulated CPU load, Memory, and Uptime
-- cursor and typing animations mimicking native terminal behavior
-- command history accessible via directional keys
+### 1. Native POSIX CLI
 
----
+The native application compiles with any standard C11 compiler and requires only POSIX thread support. It executes an interactive REPL while allocating CPU runtime in a background scheduler thread.
 
-## Telemetry Gallery
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="docs/assets/web-demo-boot.png" alt="RedTerminal Boot" />
-      <br />
-      <strong>1. System Boot & Initialization</strong>
-      <br />
-      The web environment boots into a ready state with zero active processes and a baseline telemetry sidebar.
-    </td>
-    <td width="50%" valign="top">
-      <img src="docs/assets/web-demo-active.png" alt="RedTerminal Active Processes" />
-      <br />
-      <strong>2. Active Process Simulation</strong>
-      <br />
-      Upon process initialization, the terminal tracks states in real-time, mapping PID allocations while the telemetry sidebar graphs synthetic CPU and memory load.
-    </td>
-  </tr>
-</table>
-
----
-
-## Operating Directives
-RedTerminal operates on the following architectural directives:
-- isolate complex OS mechanics
-- translate concepts into readable C implementations
-- provide an interactive execution interface
-- output deterministic visualizations
-
-These directives strictly govern the module structure, the threading model, data structures, and the accompanying web layer.
-
----
-
-## Tech Stack
-### Core Systems (Backend)
-- C11 Standard
-- POSIX Threads (`pthreads`)
-- GNU Make
-
-### Web Interface (Frontend)
-- HTML5
-- CSS3 (Custom Properties, Flexbox, Animations)
-- Vanilla JavaScript (ES6+)
-
----
-
-## Project Structure
 ```text
-RedTerminal/
-├── Makefile                # Build system configuration
-├── README.md               # Project overview and instructions
-├── LICENSE                 # MIT License
-├── .github/workflows/      # CI/CD pipelines
-├── demo/                   # Technical documentation & assets
-│   ├── architecture.md     # Module layout and thread model
-│   ├── commands.md         # CLI reference guide
-│   └── screenshots/        # Telemetry gallery assets
-├── include/                # Public C header files (API contracts)
-├── src/                    # C source implementations
-├── tests/                  # Automated C test suite
-└── docs/                   # Vanilla JS Browser Simulation
-    ├── app.js
-    ├── index.html
-    └── style.css
+[Main Thread]  fgets() ----> Command Parser ----> Mutex Lock ----> Update PCB ----> Mutex Unlock
+                                                                        ^
+[Worker Thread] Sleep(1s) ---------------------------------------------> Poll & Increment cpu_time
+```
+
+### 2. WebAssembly Client-Server
+
+The browser deployment pairs a Go HTTP server with an Emscripten-compiled WebAssembly runtime:
+
+```text
+Browser Client (public/index.html + app.js)
+  │
+  ├── [HTMX Polling] ───────── GET /ping (every 30s) ────────> Go HTTP Server (main.go)
+  │                                                                 │
+  │                                                            Returns "pong"
+  │
+  └── [Terminal Commands] ────> WASM Memory Bridge (HEAPU8)
+                                    │
+                                    ├── Module._malloc(byte_size)
+                                    ├── Copy ArrayBuffer payload
+                                    ├── Execute C function (filter_logs, sha256_hash, etc.)
+                                    ├── Extract pointer / convert to Blob
+                                    └── Module._free(ptr)
 ```
 
 ---
 
-## Architecture
-### Systems Responsibilities
-- **Process Manager**: Handles Process Control Blocks (PCBs) and strict state transitions. Secures memory and enforces active limits.
-- **Scheduler**: Utilizes POSIX threads to simulate CPU time allocation in the background, fully decoupled from blocking I/O.
-- **Logger**: Asynchronously writes structured system events to `redterm.log` using mutex locks.
-- **Shell**: The primary entry point providing the REPL interface.
+## WebAssembly Exported Function Interface
 
-### Data Flow
-1. User executes a command via the shell interface.
-2. The shell parses arguments and delegates to the Process Manager.
-3. The Process Manager updates the global PCB array securely.
-4. The background Scheduler thread continuously polls the PCB array, granting CPU time to `RUNNING` processes.
-5. All critical state changes invoke the thread-safe Logger to record events.
+The following C functions are exported through the Emscripten runtime:
 
----
-
-## Validation Snapshot
-The current repository state includes:
-- modular C codebase separated into `src` and `include` headers
-- a `tests` directory containing assertion-based tests for `logger`, `process`, and `scheduler`
-- automated testing execution available via `make test`
-- functional web interface deployable to static hosting
+| Exported C Symbol | Parameters | Return Type | Semantics |
+| :--- | :--- | :--- | :--- |
+| `process_data` | `uint8_t *data, int size` | `uint8_t*` | Returns input pointer to confirm memory buffer handoff integrity. |
+| `filter_logs` | `char *input, char *keyword` | `char*` | Extracts matching lines via pointer arithmetic; returns dynamically allocated buffer. |
+| `base64_encode` | `const char *input` | `char*` | Encodes input string using RFC 4648 Base64; returns null-terminated string. |
+| `base64_decode` | `const char *input` | `char*` | Decodes Base64 string; ignores whitespace; returns null-terminated string. |
+| `sha256_hash` | `const char *input` | `char*` | Computes standard 256-bit message digest; returns 64-character lowercase hex string. |
+| `validate_json` | `char *payload` | `int` | Single-pass structural validator; returns `0` if valid, or 1-based error line number. |
 
 ---
 
-## Key Capabilities
-- simulated CPU scheduling and multi-process lifecycle tracking
-- state validation preventing illegal transitions (e.g., terminating a dead process)
-- interactive browser-based simulation mapping the C application feature-set
-- live telemetry tracking simulated CPU load, memory usage, and uptime
-- CI/CD ready structure utilizing GitHub Actions workflows
+## Command Reference
+
+| Command | Environment | Description | Syntax |
+| :--- | :--- | :--- | :--- |
+| `start` | Native | Allocate a new process in the PCB table | `start <name>` |
+| `kill` | Native | Terminate an active or suspended process | `kill <pid>` |
+| `pause` | Native | Suspend CPU time allocation | `pause <pid>` |
+| `resume` | Native | Resume CPU time allocation | `resume <pid>` |
+| `ps` | Native / Web | Display active Process Control Block records | `ps` |
+| `logs` | Native | Dump internal system events from disk | `logs` |
+| `upload` | Web | Ingest file into WASM memory & trigger processed download | `upload` |
+| `filter` | Web | Filter log lines containing a keyword via WASM pointer scan | `filter <keyword>` |
+| `b64` | Web | Encode or decode string via WASM Base64 engine | `b64 [-e\|-d] <text>` |
+| `hash` | Web | Compute SHA-256 hash digest via WASM | `hash <text>` |
+| `check` | Web | Validate JSON bracket, brace, and quote syntax via WASM | `check <json>` |
+| `echo` | Web | Print arguments to output stream | `echo [text]` |
+| `ping` | Web | Measure local shell execution latency | `ping` |
+| `clear` | Web | Flush terminal viewport | `clear` |
+| `info` | Web | Output system architecture specifications | `info` |
+| `help` | Native / Web | Display command index | `help` |
+| `exit` | Native | Terminate scheduler thread and close application | `exit` |
 
 ---
 
-## Current Scope
-RedTerminal is positioned as a systems simulator and web environment with:
-- an interactive C CLI executable
-- a complete web-based terminal simulator
-- background thread simulation
-- thread-safe logging infrastructure
-- documentation on architecture and command execution
+## Build and Execution
 
----
-
-## Local Execution
 ### Prerequisites
-- A POSIX-compliant environment (Linux / macOS / WSL)
-- `gcc` compiler
-- `make` utility
 
-### Compile the Application
+- GCC (supporting `-std=c11` and `-pthread`)
+- GNU Make
+- Go 1.20+ (for backend HTTP execution)
+- Emscripten SDK (`emcc`, for WebAssembly compilation)
+
+### Build Directives
+
+#### 1. Compile Native Binary
 ```bash
 make
 ```
+Produces the `redterm` native executable at the project root.
 
-### Run the Application
-```bash
-./redterm
-# OR
-make run
-```
-
----
-
-## Build Directives
-### Start Application
-```bash
-make run
-```
-
-### Run Test Suite
+#### 2. Execute Test Suites
 ```bash
 make test
 ```
+Compiles and executes test binaries in `tests/`, validating process lifecycles, thread safety, cryptography, and syntax validation.
 
-### Clean Build Artifacts
+#### 3. Compile WebAssembly Module
+```bash
+make build-wasm
+```
+Compiles `src/*.c` using `emcc` into `public/redterm.js` and `public/redterm.wasm` with exported memory functions.
+
+#### 4. Run Web Application
+```bash
+make run
+```
+Builds the WebAssembly artifacts and starts the Go HTTP server on `http://localhost:8080`.
+
+#### 5. Clean Artifacts
 ```bash
 make clean
 ```
-
----
-
-## Deployment
-### Web Interface Deployment
-- Hosted as a static web environment via GitHub Pages
-- Public deployment URL: [https://voxion-labs.github.io/RedTerminal/](https://voxion-labs.github.io/RedTerminal/)
-
-### Deployment Profile
-- browser-first frontend located in the `docs/` directory
-- zero external dependencies or build tools required for the web environment
+Removes compiled object files, native executables, test binaries, and WebAssembly build artifacts.
 
 ---
 
@@ -252,24 +204,10 @@ RedTerminal operates under the MIT License.
 
 The full license text is available in the [LICENSE](LICENSE) directive.
 
-License summary:
-- copyright © 2026 Rudranarayan Jena
-- permission is granted to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software
-- provided "as is", without warranty of any kind
-
----
-
-<br>
-<div align="right">
-  <b>Rudranarayan Jena</b><br>
-  <i>Founder @ Voxion Labs</i>
-</div>
-
 ---
 <div align="center">
   (c) 2026 Voxion Labs & Rudranarayan Jena
 </div>
 <p align="center">
- Zero-Backend · CRDT Edge Cookies · C · Javascript
+  Zero-Backend · CRDT Edge Cookies · C
 </p>
-
