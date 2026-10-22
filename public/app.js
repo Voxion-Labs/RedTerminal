@@ -65,6 +65,22 @@ function ensureWasmMemory() {
             return 0;
         };
     }
+    if (typeof Module.UTF8ToString !== 'function') {
+        Module.UTF8ToString = function(ptr) {
+            if (!ptr || !Module.HEAPU8) return '';
+            let str = '';
+            let p = ptr;
+            while (p < Module.HEAPU8.length && Module.HEAPU8[p] !== 0) {
+                str += String.fromCharCode(Module.HEAPU8[p]);
+                p++;
+            }
+            try {
+                return decodeURIComponent(escape(str));
+            } catch (e) {
+                return str;
+            }
+        };
+    }
 }
 
 /**
@@ -227,6 +243,8 @@ function executeCommand(cmd) {
                 termPrint(`Selected: ${file.name} (${file.size} bytes)`, 'highlight');
                 const reader = new FileReader();
                 reader.onload = function(e) {
+                    let inPtr = 0;
+                    let outPtr = 0;
                     try {
                         const arrayBuffer = e.target.result;
                         const uint8Array = new Uint8Array(arrayBuffer);
@@ -235,7 +253,7 @@ function executeCommand(cmd) {
                         ensureWasmMemory();
 
                         // 1. Allocate WASM memory using Emscripten _malloc
-                        const inPtr = Module._malloc(size);
+                        inPtr = Module._malloc(size);
                         if (!inPtr) {
                             termPrint('ERR: Failed to allocate WASM memory via _malloc.', 'error');
                             return;
@@ -246,7 +264,7 @@ function executeCommand(cmd) {
                         termPrint(`Transferred ${size} bytes to WASM HEAPU8 [inPtr: 0x${inPtr.toString(16)}].`, 'dim');
 
                         // 3. Call process_data (C function via Emscripten)
-                        let outPtr = inPtr;
+                        outPtr = inPtr;
                         if (typeof Module._process_data === 'function') {
                             outPtr = Module._process_data(inPtr, size);
                         } else if (typeof Module.ccall === 'function') {
@@ -263,16 +281,18 @@ function executeCommand(cmd) {
                         const downloadName = file.name.startsWith('processed_') ? file.name : `processed_${file.name}`;
                         downloadWasmOutput(outPtr, size, downloadName, file.type || 'application/octet-stream');
                         termPrint(`Automatic download initiated for '${downloadName}'.`, 'success');
-
-                        // 5. Clean up allocated WASM memory
+                    } catch (err) {
+                        termPrint(`ERR: Upload processing failed: ${err.message}`, 'error');
+                    } finally {
+                        // 5. Clean up allocated WASM memory immediately to prevent heap leaks
                         if (typeof Module._free === 'function') {
-                            Module._free(inPtr);
-                            if (outPtr !== inPtr) {
+                            if (inPtr) {
+                                Module._free(inPtr);
+                            }
+                            if (outPtr && outPtr !== inPtr) {
                                 Module._free(outPtr);
                             }
                         }
-                    } catch (err) {
-                        termPrint(`ERR: Upload processing failed: ${err.message}`, 'error');
                     }
                 };
                 reader.onerror = function() {
@@ -282,7 +302,7 @@ function executeCommand(cmd) {
             });
             break;
 
-        case 'filter':
+        case 'filter': {
             if (!args.length) {
                 termPrint('Usage: filter <keyword>', 'error');
                 break;
@@ -296,8 +316,16 @@ function executeCommand(cmd) {
             termPrint(`Filtering logs with keyword: '${kw}' via WASM filter_logs...`, 'dim');
             if (typeof Module.ccall === 'function') {
                 try {
-                    const res = Module.ccall('filter_logs', 'string', ['string', 'string'], [sampleLogs, kw]);
-                    termPrint(res && res.trim() ? res.trim() : '(No matching entries found)', res && res.trim() ? 'success' : 'dim');
+                    const ptr = Module.ccall('filter_logs', 'number', ['string', 'string'], [sampleLogs, kw]);
+                    if (ptr) {
+                        const res = Module.UTF8ToString(ptr);
+                        if (typeof Module._free === 'function') {
+                            Module._free(ptr);
+                        }
+                        termPrint(res && res.trim() ? res.trim() : '(No matching entries found)', res && res.trim() ? 'success' : 'dim');
+                    } else {
+                        termPrint('(No matching entries found)', 'dim');
+                    }
                 } catch (e) {
                     termPrint(`ERR: ${e.message}`, 'error');
                 }
@@ -307,6 +335,7 @@ function executeCommand(cmd) {
                 termPrint(lines ? lines : '(No matching entries found)', lines ? 'success' : 'dim');
             }
             break;
+        }
 
         case 'b64': {
             if (!args.length) {
@@ -336,8 +365,16 @@ function executeCommand(cmd) {
             if (typeof Module.ccall === 'function') {
                 try {
                     const fnName = mode === 'encode' ? 'base64_encode' : 'base64_decode';
-                    const result = Module.ccall(fnName, 'string', ['string'], [textToProcess]);
-                    termPrint(result, 'success');
+                    const ptr = Module.ccall(fnName, 'number', ['string'], [textToProcess]);
+                    if (ptr) {
+                        const result = Module.UTF8ToString(ptr);
+                        if (typeof Module._free === 'function') {
+                            Module._free(ptr);
+                        }
+                        termPrint(result, 'success');
+                    } else {
+                        termPrint('ERR: WASM Base64 returned null pointer.', 'error');
+                    }
                 } catch (err) {
                     termPrint(`ERR: WASM Base64 error: ${err.message}`, 'error');
                 }
@@ -365,8 +402,16 @@ function executeCommand(cmd) {
             const textToHash = args.join(' ');
             if (typeof Module.ccall === 'function') {
                 try {
-                    const digest = Module.ccall('sha256_hash', 'string', ['string'], [textToHash]);
-                    termPrint(digest, 'success');
+                    const ptr = Module.ccall('sha256_hash', 'number', ['string'], [textToHash]);
+                    if (ptr) {
+                        const digest = Module.UTF8ToString(ptr);
+                        if (typeof Module._free === 'function') {
+                            Module._free(ptr);
+                        }
+                        termPrint(digest, 'success');
+                    } else {
+                        termPrint('ERR: WASM SHA-256 returned null pointer.', 'error');
+                    }
                 } catch (err) {
                     termPrint(`ERR: WASM SHA-256 error: ${err.message}`, 'error');
                 }

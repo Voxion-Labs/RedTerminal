@@ -1,8 +1,9 @@
 <p align="center">
-  <img src="docs/assets/logo.png" alt="RedTerminal logo" width="130" />
+  <img src="demo/logo.png" alt="RedTerminal Logo" width="130" />
 </p>
+<h1 align="center">RedTerminal</h1>
 <p align="center">
-  A systems-level C executable engineered for process lifecycle management and simulated CPU scheduling.
+  A systems-level C execution engine and WebAssembly terminal emulator for process lifecycle management and simulated CPU scheduling.
 </p>
 <p align="center">
   <a href="https://voxion-labs.github.io/RedTerminal/">Live Terminal</a>
@@ -28,7 +29,8 @@ RedTerminal/
 ├── Makefile                # Unified build system (native C + Emscripten WASM)
 ├── go.mod                  # Go module definition (redterminal)
 ├── main.go                 # Standard library HTTP static file & ping server (:8080)
-├── demo/                   # Technical reference specifications
+├── demo/                   # Technical reference specifications & brand assets
+│   ├── logo.png            # RedTerminal brand asset
 │   ├── architecture.md     # Memory model, thread layout, and lifecycle spec
 │   └── commands.md         # Comprehensive CLI and WASM command index
 ├── include/                # Public C header contracts
@@ -44,16 +46,16 @@ RedTerminal/
 │   ├── crypto.c            # Pure C cryptographic routines
 │   ├── filter.c            # Raw pointer scan log extraction
 │   ├── logger.c            # Thread-safe log dispatch
-│   ├── main.c              # Native CLI entrypoint and shutdown sequence
+│   ├── main.c              # Passive WASM library entrypoint
 │   ├── process.c           # Static PCB allocation and table mutation
 │   ├── scheduler.c         # Background CPU tick thread
 │   ├── shell.c             # Native command dispatch loop
 │   ├── utils.c             # String sanitisation and time formatting
 │   └── validator.c         # High-speed bracket/brace/quote syntax parser
-├── public/                 # Web interface assets
+├── public/                 # Web interface assets (served by Go HTTP server)
 │   ├── app.js              # Vanilla JS terminal emulator & WASM bridge
-│   └── index.html          # Dark developer theme & HTMX 30s status polling
-├── docs/                   # GitHub Pages static documentation build
+│   ├── index.html          # Dark developer theme & HTMX 30s status polling
+│   └── logo.png            # Web UI favicon & branding icon
 └── tests/                  # Automated assertion-based test suites
     ├── test_crypto.c       # Verification of Base64 and SHA-256 vectors
     ├── test_filter.c       # Boundary tests for pointer line filter

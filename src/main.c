@@ -5,35 +5,29 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-int main(void) {
-    // Initialize subsystem modules
-    if (!logger_init("redterm.log")) {
-        fprintf(stderr, "Failed to initialize logger.\n");
-        return EXIT_FAILURE;
-    }
-    
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#else
+#ifndef EMSCRIPTEN_KEEPALIVE
+#define EMSCRIPTEN_KEEPALIVE
+#endif
+#endif
+
+/**
+ * Passive WASM subsystem initialization.
+ * Initializes process table and shell state without starting any blocking I/O loops.
+ */
+EMSCRIPTEN_KEEPALIVE
+int redterm_init(void) {
     process_init();
-    
-    if (!scheduler_init()) {
-        logger_log(LOG_LEVEL_ERROR, "Failed to initialize scheduler.");
-        logger_close();
-        return EXIT_FAILURE;
-    }
-    
     shell_init();
-    
-    // Start background scheduler tick thread
-    scheduler_start();
-    
-    // Run the interactive shell loop (blocks until 'exit' or EOF)
-    shell_run();
-    
-    // Graceful shutdown
-    printf("Shutting down RedTerminal...\n");
-    logger_log(LOG_LEVEL_INFO, "System shutdown initiated");
-    
-    scheduler_stop();
-    logger_close();
-    
-    return EXIT_SUCCESS;
+    return 0;
+}
+
+/**
+ * Passive library entrypoint: non-blocking initialization.
+ */
+int main(void) {
+    redterm_init();
+    return 0;
 }

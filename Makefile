@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c17 -g -pthread
+CFLAGS = -Wall -Wextra -std=c11 -g -pthread
 INCLUDES = -I./include
 SRC_DIR = src
 OBJ_DIR = obj
@@ -15,9 +15,10 @@ TEST_BINS = $(patsubst $(TEST_DIR)/%.c, $(TEST_DIR)/%, $(TEST_SRCS))
 
 TARGET = redterm
 
-# Emscripten WASM Toolchain
+# Emscripten WASM Toolchain & Passive Library Sources
 EMCC = emcc
-EMCC_FLAGS = -I./include -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","stringToUTF8"]' -s EXPORTED_FUNCTIONS='["_main","_malloc","_free","_process_data","_filter_logs","_base64_encode","_base64_decode","_sha256_hash","_validate_json"]' -s NO_EXIT_RUNTIME=1 -O2
+EMCC_FLAGS = -I./include -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap", "UTF8ToString"]' -s EXPORTED_FUNCTIONS='["_malloc", "_free"]' -s NO_EXIT_RUNTIME=1 -O2
+WASM_SRCS = $(SRC_DIR)/crypto.c $(SRC_DIR)/filter.c $(SRC_DIR)/validator.c $(SRC_DIR)/utils.c $(SRC_DIR)/process.c $(SRC_DIR)/scheduler.c $(SRC_DIR)/shell.c
 
 .PHONY: all clean run test build-wasm
 
@@ -32,7 +33,7 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 
 build-wasm:
 	@mkdir -p public
-	$(EMCC) $(EMCC_FLAGS) $(wildcard $(SRC_DIR)/*.c) -o public/redterm.js
+	$(EMCC) $(EMCC_FLAGS) $(WASM_SRCS) -o public/redterm.js
 
 run: build-wasm
 	go run main.go
