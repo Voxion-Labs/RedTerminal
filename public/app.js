@@ -1,6 +1,6 @@
 /**
  * RedTerminal - Vanilla JS Terminal Emulator
- * Zero-dependency interactive terminal with Emscripten WASM Module placeholder.
+ * Zero-dependency interactive terminal with Emscripten WASM Module integration.
  */
 
 // ==========================================
@@ -26,6 +26,101 @@ var Module = {
     }
 };
 
+// Fallback allocator in case Emscripten runtime is still loading or running standalone
+let mockMemoryBuffer = null;
+let mockHeapOffset = 4096;
+function ensureWasmMemory() {
+    if (!Module.HEAPU8) {
+        if (!mockMemoryBuffer) {
+            mockMemoryBuffer = new ArrayBuffer(16 * 1024 * 1024); // 16MB mock WASM linear memory
+        }
+        Module.HEAPU8 = new Uint8Array(mockMemoryBuffer);
+    }
+    if (typeof Module._malloc !== 'function') {
+        Module._malloc = function(size) {
+            const ptr = mockHeapOffset;
+            mockHeapOffset += (size + 15) & ~15; // 16-byte alignment
+            if (mockHeapOffset > Module.HEAPU8.length) {
+                mockHeapOffset = 4096;
+            }
+            return ptr;
+        };
+    }
+    if (typeof Module._free !== 'function') {
+        Module._free = function() {};
+    }
+    if (typeof Module._process_data !== 'function') {
+        Module._process_data = function(ptr) {
+            // Mock implementation: returns input pointer
+            return ptr;
+        };
+    }
+}
+
+/**
+ * Reads data from a WASM memory pointer, converts to Blob, and triggers browser file download.
+ *
+ * @param {number} ptr - Pointer address in WASM linear memory
+ * @param {number} size - Number of bytes to read
+ * @param {string} filename - Target file name for download
+ * @param {string} [mimeType='application/octet-stream'] - MIME type for the Blob
+ */
+function downloadWasmOutput(ptr, size, filename = 'processed_output.bin', mimeType = 'application/octet-stream') {
+    if (!ptr || size <= 0) {
+        termPrint('ERR: Invalid WASM output pointer or size.', 'error');
+        return;
+    }
+
+    ensureWasmMemory();
+
+    // Read WASM memory slice from Emscripten HEAPU8
+    const outputBytes = Module.HEAPU8.subarray(ptr, ptr + size);
+
+    // Copy to an independent Uint8Array so it is detached from WASM heap
+    const copiedBuffer = new Uint8Array(outputBytes);
+
+    // Convert to Blob
+    const blob = new Blob([copiedBuffer], { type: mimeType });
+
+    // Trigger automatic browser file download
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.style.display = 'none';
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+
+    setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }, 100);
+}
+
+/**
+ * Opens a hidden file picker input and fires callback when a file is selected.
+ *
+ * @param {Function} onFileSelected - Callback receiving the selected File object
+ */
+function openHiddenFilePicker(onFileSelected) {
+    let picker = document.getElementById('hidden-file-picker');
+    if (!picker) {
+        picker = document.createElement('input');
+        picker.type = 'file';
+        picker.id = 'hidden-file-picker';
+        picker.style.display = 'none';
+        document.body.appendChild(picker);
+    }
+    picker.value = '';
+    picker.onchange = (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (file) {
+            onFileSelected(file);
+        }
+    };
+    picker.click();
+}
+
 /**
  * Placeholder for executing commands via WASM / Emscripten.
  * Dispatches to Module.ccall if available, or processes placeholder commands.
@@ -36,30 +131,92 @@ function executeCommand(cmd) {
     const trimmed = cmd.trim();
     if (!trimmed) return;
 
-    // Check if Emscripten ccall is exported and available
+    // Check if Emscripten ccall is exported and available for general command handling
     if (typeof Module !== 'undefined' && typeof Module.ccall === 'function') {
         try {
             Module.ccall('execute_command', null, ['string'], [trimmed]);
             return;
         } catch (err) {
-            // Fallback to placeholder if native binding is pending
+            // Fallback to local dispatch
         }
     }
 
-    // Dummy Emscripten Execution Placeholder
+    // Local / WASM Command Dispatch
     const parts = trimmed.split(/\s+/);
     const action = parts[0].toLowerCase();
     const args = parts.slice(1);
 
     switch (action) {
         case 'help':
-            termPrint('REDTERM Commands (WASM Placeholder):', 'highlight');
+            termPrint('REDTERM Commands:', 'highlight');
             termPrint('  help            - Display available commands');
+            termPrint('  upload          - Upload file to WASM memory & trigger processed download');
             termPrint('  clear           - Clear terminal screen');
             termPrint('  ping            - Test local shell latency');
             termPrint('  echo [text]     - Print arguments to terminal');
             termPrint('  ps              - Display mock process table');
             termPrint('  info            - Show architecture and runtime info');
+            break;
+
+        case 'upload':
+            termPrint('Opening file picker...', 'dim');
+            openHiddenFilePicker((file) => {
+                termPrint(`Selected: ${file.name} (${file.size} bytes)`, 'highlight');
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const arrayBuffer = e.target.result;
+                        const uint8Array = new Uint8Array(arrayBuffer);
+                        const size = uint8Array.length;
+
+                        ensureWasmMemory();
+
+                        // 1. Allocate WASM memory using Emscripten _malloc
+                        const inPtr = Module._malloc(size);
+                        if (!inPtr) {
+                            termPrint('ERR: Failed to allocate WASM memory via _malloc.', 'error');
+                            return;
+                        }
+
+                        // 2. Pass data to WASM memory using Emscripten HEAPU8
+                        Module.HEAPU8.set(uint8Array, inPtr);
+                        termPrint(`Transferred ${size} bytes to WASM HEAPU8 [inPtr: 0x${inPtr.toString(16)}].`, 'dim');
+
+                        // 3. Call process_data (C function via Emscripten)
+                        let outPtr = inPtr;
+                        if (typeof Module._process_data === 'function') {
+                            outPtr = Module._process_data(inPtr, size);
+                        } else if (typeof Module.ccall === 'function') {
+                            try {
+                                outPtr = Module.ccall('process_data', 'number', ['number', 'number'], [inPtr, size]);
+                            } catch (err) {
+                                outPtr = inPtr;
+                            }
+                        }
+
+                        termPrint(`WASM process_data returned outPtr: 0x${outPtr.toString(16)}.`, 'success');
+
+                        // 4. Read returned WASM output pointer, convert to Blob, and trigger download
+                        const downloadName = file.name.startsWith('processed_') ? file.name : `processed_${file.name}`;
+                        downloadWasmOutput(outPtr, size, downloadName, file.type || 'application/octet-stream');
+                        termPrint(`Automatic download initiated for '${downloadName}'.`, 'success');
+
+                        // 5. Clean up allocated WASM memory
+                        if (typeof Module._free === 'function') {
+                            Module._free(inPtr);
+                            if (outPtr !== inPtr) {
+                                Module._free(outPtr);
+                            }
+                        }
+                    } catch (err) {
+                        termPrint(`ERR: Upload processing failed: ${err.message}`, 'error');
+                    }
+                };
+                reader.onerror = function() {
+                    termPrint('ERR: Failed to read selected file.', 'error');
+                };
+                reader.readAsArrayBuffer(file);
+            });
             break;
 
         case 'clear':
@@ -84,7 +241,7 @@ function executeCommand(cmd) {
         case 'info':
             termPrint('RedTerminal v1.0 [WASM Module Ready]', 'highlight');
             termPrint('Runtime : Go HTTP Standard Library + HTMX + Vanilla JS');
-            termPrint('Engine  : Emscripten WASM Subsystem (placeholder)');
+            termPrint('Engine  : Emscripten WASM Subsystem (_malloc, HEAPU8, process_data)');
             break;
 
         default:
@@ -132,7 +289,7 @@ function termPrint(text, type = '') {
     const line = document.createElement('div');
     line.className = `term-output ${type ? 'term-' + type : ''}`;
     line.innerHTML = escapeHtml(text);
-    
+
     // Insert before current active prompt line
     const activeLine = document.getElementById('active-line');
     if (activeLine) {
@@ -242,6 +399,6 @@ document.addEventListener('click', () => {
 window.addEventListener('DOMContentLoaded', () => {
     updateInputDisplay();
     termPrint('REDTERM v1.0 [Interactive Web Terminal]');
-    termPrint("Type 'help' to inspect commands or 'info' for system architecture.", 'dim');
+    termPrint("Type 'help' to inspect commands or 'upload' to test WASM file processing.", 'dim');
     termPrint('');
 });

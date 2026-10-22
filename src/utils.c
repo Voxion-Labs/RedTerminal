@@ -57,3 +57,13 @@ void utils_format_time(char *buffer, size_t size) {
         buffer[0] = '\0';
     }
 }
+
+/**
+ * Mock data processing function for WASM integration.
+ * Simply returns the input data pointer.
+ */
+EMSCRIPTEN_KEEPALIVE
+uint8_t* process_data(uint8_t *data, int size) {
+    (void)size;
+    return data;
+}
