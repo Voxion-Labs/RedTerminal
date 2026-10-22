@@ -176,8 +176,9 @@ function downloadWasmOutput(ptr, size, filename = 'processed_output.bin', mimeTy
  * Opens a hidden file picker input and fires callback when a file is selected.
  *
  * @param {Function} onFileSelected - Callback receiving the selected File object
+ * @param {string} [accept=''] - Optional MIME/extension filter
  */
-function openHiddenFilePicker(onFileSelected) {
+function openHiddenFilePicker(onFileSelected, accept = '') {
     let picker = document.getElementById('hidden-file-picker');
     if (!picker) {
         picker = document.createElement('input');
@@ -186,6 +187,7 @@ function openHiddenFilePicker(onFileSelected) {
         picker.style.display = 'none';
         document.body.appendChild(picker);
     }
+    picker.accept = accept;
     picker.value = '';
     picker.onchange = (e) => {
         const file = e.target.files && e.target.files[0];
@@ -226,7 +228,7 @@ function executeCommand(cmd) {
             termPrint('REDTERM Commands:', 'highlight');
             termPrint('  help            - Display available commands');
             termPrint('  upload          - Upload file to WASM memory & trigger processed download');
-            termPrint('  filter <word>   - Filter sample log lines via WASM filter_logs');
+            termPrint('  filter <word>   - Upload a log file, filter lines via WASM & auto-download');
             termPrint('  b64 [-e|-d] <s> - Base64 encode/decode string via WASM');
             termPrint('  hash <text>     - Compute SHA-256 hash digest via WASM');
             termPrint('  check <json>    - High-speed single-pass JSON validator via WASM');
@@ -305,35 +307,62 @@ function executeCommand(cmd) {
         case 'filter': {
             if (!args.length) {
                 termPrint('Usage: filter <keyword>', 'error');
+                termPrint('Example: filter ERROR', 'dim');
                 break;
             }
             const kw = args.join(' ');
-            const sampleLogs = "2026-10-22 13:10:01 [INFO] Subsystem kernel initialized\n" +
-                               "2026-10-22 13:10:02 [ERROR] Connection timeout to peer node\n" +
-                               "2026-10-22 13:10:04 [WARN] High thread contention detected\n" +
-                               "2026-10-22 13:10:05 [ERROR] Fatal memory segment access violation\n" +
-                               "2026-10-22 13:10:07 [INFO] Backup sync cycle finished\n";
-            termPrint(`Filtering logs with keyword: '${kw}' via WASM filter_logs...`, 'dim');
-            if (typeof Module.ccall === 'function') {
-                try {
-                    const ptr = Module.ccall('filter_logs', 'number', ['string', 'string'], [sampleLogs, kw]);
-                    if (ptr) {
-                        const res = Module.UTF8ToString(ptr);
-                        if (typeof Module._free === 'function') {
+            termPrint(`Select a log file to filter lines containing '${kw}'...`, 'dim');
+            openHiddenFilePicker((file) => {
+                termPrint(`Loaded file '${file.name}' (${file.size} bytes). Filtering via WASM...`, 'highlight');
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    let ptr = 0;
+                    try {
+                        const fileContent = e.target.result;
+                        let filteredText = '';
+
+                        if (typeof Module.ccall === 'function') {
+                            ptr = Module.ccall('filter_logs', 'number', ['string', 'string'], [fileContent, kw]);
+                            if (ptr) {
+                                filteredText = Module.UTF8ToString(ptr);
+                                Module._free(ptr);
+                                ptr = 0;
+                            }
+                        } else {
+                            // Fallback if WASM is not loaded
+                            filteredText = fileContent.split('\n').filter(line => line.includes(kw)).join('\n');
+                        }
+
+                        // Trigger automated browser download of filtered_logs.txt
+                        const blob = new Blob([filteredText], { type: 'text/plain;charset=utf-8' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.style.display = 'none';
+                        a.href = url;
+                        a.download = 'filtered_logs.txt';
+                        document.body.appendChild(a);
+                        a.click();
+
+                        setTimeout(() => {
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
+                        }, 100);
+
+                        const count = filteredText ? filteredText.trim().split('\n').filter(Boolean).length : 0;
+                        termPrint(`Success: Extracted ${count} matching line(s). Triggered download for 'filtered_logs.txt'.`, 'success');
+                    } catch (err) {
+                        termPrint(`ERR: Log filter processing failed: ${err.message}`, 'error');
+                    } finally {
+                        if (ptr && typeof Module._free === 'function') {
                             Module._free(ptr);
                         }
-                        termPrint(res && res.trim() ? res.trim() : '(No matching entries found)', res && res.trim() ? 'success' : 'dim');
-                    } else {
-                        termPrint('(No matching entries found)', 'dim');
                     }
-                } catch (e) {
-                    termPrint(`ERR: ${e.message}`, 'error');
-                }
-            } else {
-                // Fallback demonstration
-                const lines = sampleLogs.split('\n').filter(l => l.includes(kw)).join('\n');
-                termPrint(lines ? lines : '(No matching entries found)', lines ? 'success' : 'dim');
-            }
+                };
+                reader.onerror = function() {
+                    termPrint('ERR: Failed to read selected file.', 'error');
+                };
+                reader.readAsText(file);
+            }, '.txt,.log,text/*');
             break;
         }
 

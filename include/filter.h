@@ -9,8 +9,8 @@
 #endif
 #endif
 
-// Fast Log Filtering via pure pointer arithmetic for WASM export
+// Fast Log Filtering via pure pointer traversal and strstr for WASM export
 EMSCRIPTEN_KEEPALIVE
-char* filter_logs(char *input, char *keyword);
+char* filter_logs(const char *input, const char *keyword);
 
 #endif // FILTER_H

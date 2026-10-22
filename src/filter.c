@@ -1,111 +1,85 @@
 #include "filter.h"
 #include <stdlib.h>
-#include <stddef.h>
+#include <string.h>
 #include <stdbool.h>
 
 /**
- * Filter log lines containing a keyword using pure C pointer arithmetic.
- * Optimized for high throughput and single-allocation execution.
+ * Filter log lines containing a keyword using pure C pointers and strstr.
  *
  * @param input   Null-terminated input log buffer
  * @param keyword Null-terminated search term
- * @return Newly allocated null-terminated output buffer with matching lines
+ * @return Newly allocated null-terminated output buffer containing matching lines
  */
 EMSCRIPTEN_KEEPALIVE
-char* filter_logs(char *input, char *keyword) {
+char* filter_logs(const char *input, const char *keyword) {
     if (!input) {
         char *empty = (char*)malloc(1);
         if (empty) *empty = '\0';
         return empty;
     }
 
+    size_t in_len = strlen(input);
+
     if (!keyword || *keyword == '\0') {
-        // Return duplicate of entire input if keyword is empty
-        const char *s = input;
-        while (*s) s++;
-        size_t len = (size_t)(s - input);
-        char *out = (char*)malloc(len + 1);
-        if (!out) return NULL;
-        char *d = out;
-        s = input;
-        while ((*d++ = *s++));
-        return out;
+        char *copy = (char*)malloc(in_len + 1);
+        if (!copy) return NULL;
+        memcpy(copy, input, in_len + 1);
+        return copy;
     }
 
-    // Fast-path length scans using pointer arithmetic
-    const char *p = input;
-    while (*p) p++;
-    size_t in_len = (size_t)(p - input);
-
-    const char *k = keyword;
-    while (*k) k++;
-    size_t kw_len = (size_t)(k - keyword);
-
+    size_t kw_len = strlen(keyword);
     if (kw_len > in_len) {
         char *empty = (char*)malloc(1);
         if (empty) *empty = '\0';
         return empty;
     }
 
+    // Allocate temporary duplicate to isolate lines with null terminators for strstr
+    char *in_copy = (char*)malloc(in_len + 1);
+    if (!in_copy) return NULL;
+    memcpy(in_copy, input, in_len + 1);
+
     // Allocate upper-bound buffer: filtered output is bounded by in_len + 2
     char *out_buf = (char*)malloc(in_len + 2);
-    if (!out_buf) return NULL;
+    if (!out_buf) {
+        free(in_copy);
+        return NULL;
+    }
 
     char *dst = out_buf;
-    const char *line_start = input;
-    p = input;
-    const char kw_first = *keyword;
+    char *p = in_copy;
 
     while (*p) {
-        // Locate end of current line using raw pointer traversal
+        char *line_start = p;
+
+        // Traverse to line boundary using pointer arithmetic
         while (*p && *p != '\n') {
             p++;
         }
 
-        const char *line_end = p;
-        size_t line_len = (size_t)(line_end - line_start);
-
-        // Substring search via pointer arithmetic
-        if (line_len >= kw_len) {
-            const char *scan = line_start;
-            const char *scan_limit = line_end - kw_len;
-            bool matched = false;
-
-            while (scan <= scan_limit) {
-                if (*scan == kw_first) {
-                    const char *kp = keyword + 1;
-                    const char *cp = scan + 1;
-                    while (*kp && *cp == *kp) {
-                        cp++;
-                        kp++;
-                    }
-                    if (*kp == '\0') {
-                        matched = true;
-                        break;
-                    }
-                }
-                scan++;
-            }
-
-            if (matched) {
-                // Copy matching line directly to output buffer
-                const char *src = line_start;
-                while (src < line_end) {
-                    *dst++ = *src++;
-                }
-                *dst++ = '\n';
-            }
+        bool has_newline = (*p == '\n');
+        if (has_newline) {
+            *p = '\0';
         }
 
-        if (*p == '\n') {
+        // Check if line contains keyword using strstr
+        if (strstr(line_start, keyword) != NULL) {
+            const char *src = line_start;
+            while (*src) {
+                *dst++ = *src++;
+            }
+            *dst++ = '\n';
+        }
+
+        if (has_newline) {
             p++;
         }
-        line_start = p;
     }
 
     *dst = '\0';
+    free(in_copy);
 
-    // Shrink allocation to exact footprint
+    // Shrink allocation to actual size
     size_t actual_len = (size_t)(dst - out_buf);
     char *shrunk = (char*)realloc(out_buf, actual_len + 1);
     return shrunk ? shrunk : out_buf;
