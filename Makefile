@@ -17,7 +17,7 @@ TARGET = redterm
 
 # Emscripten WASM Toolchain
 EMCC = emcc
-EMCC_FLAGS = -I./include -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","stringToUTF8"]' -s EXPORTED_FUNCTIONS='["_main","_malloc","_free","_process_data","_filter_logs"]' -s NO_EXIT_RUNTIME=1 -O2
+EMCC_FLAGS = -I./include -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","stringToUTF8"]' -s EXPORTED_FUNCTIONS='["_main","_malloc","_free","_process_data","_filter_logs","_base64_encode","_base64_decode","_sha256_hash"]' -s NO_EXIT_RUNTIME=1 -O2
 
 .PHONY: all clean run test build-wasm
 

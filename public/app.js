@@ -157,6 +157,8 @@ function executeCommand(cmd) {
             termPrint('  help            - Display available commands');
             termPrint('  upload          - Upload file to WASM memory & trigger processed download');
             termPrint('  filter <word>   - Filter sample log lines via WASM filter_logs');
+            termPrint('  b64 [-e|-d] <s> - Base64 encode/decode string via WASM');
+            termPrint('  hash <text>     - Compute SHA-256 hash digest via WASM');
             termPrint('  clear           - Clear terminal screen');
             termPrint('  ping            - Test local shell latency');
             termPrint('  echo [text]     - Print arguments to terminal');
@@ -250,6 +252,87 @@ function executeCommand(cmd) {
                 termPrint(lines ? lines : '(No matching entries found)', lines ? 'success' : 'dim');
             }
             break;
+
+        case 'b64': {
+            if (!args.length) {
+                termPrint('Usage: b64 [-e|encode | -d|decode] <text>', 'error');
+                break;
+            }
+            let mode = 'encode';
+            let textToProcess = '';
+
+            const firstArg = args[0].toLowerCase();
+            if (firstArg === '-e' || firstArg === 'encode') {
+                mode = 'encode';
+                textToProcess = args.slice(1).join(' ');
+            } else if (firstArg === '-d' || firstArg === 'decode') {
+                mode = 'decode';
+                textToProcess = args.slice(1).join(' ');
+            } else {
+                mode = 'encode';
+                textToProcess = args.join(' ');
+            }
+
+            if (!textToProcess) {
+                termPrint(`ERR: No input string specified to ${mode}.`, 'error');
+                break;
+            }
+
+            if (typeof Module.ccall === 'function') {
+                try {
+                    const fnName = mode === 'encode' ? 'base64_encode' : 'base64_decode';
+                    const result = Module.ccall(fnName, 'string', ['string'], [textToProcess]);
+                    termPrint(result, 'success');
+                } catch (err) {
+                    termPrint(`ERR: WASM Base64 error: ${err.message}`, 'error');
+                }
+            } else {
+                try {
+                    if (mode === 'encode') {
+                        const encoded = btoa(unescape(encodeURIComponent(textToProcess)));
+                        termPrint(encoded, 'success');
+                    } else {
+                        const decoded = decodeURIComponent(escape(atob(textToProcess)));
+                        termPrint(decoded, 'success');
+                    }
+                } catch (e) {
+                    termPrint(`ERR: Base64 decode error: ${e.message}`, 'error');
+                }
+            }
+            break;
+        }
+
+        case 'hash': {
+            if (!args.length) {
+                termPrint('Usage: hash <text>', 'error');
+                break;
+            }
+            const textToHash = args.join(' ');
+            if (typeof Module.ccall === 'function') {
+                try {
+                    const digest = Module.ccall('sha256_hash', 'string', ['string'], [textToHash]);
+                    termPrint(digest, 'success');
+                } catch (err) {
+                    termPrint(`ERR: WASM SHA-256 error: ${err.message}`, 'error');
+                }
+            } else {
+                if (typeof crypto !== 'undefined' && crypto.subtle) {
+                    crypto.subtle.digest('SHA-256', new TextEncoder().encode(textToHash))
+                        .then(buf => {
+                            const hashHex = Array.from(new Uint8Array(buf))
+                                .map(b => b.toString(16).padStart(2, '0'))
+                                .join('');
+                            termPrint(hashHex, 'success');
+                        })
+                        .catch(err => {
+                            termPrint(`ERR: Hash error: ${err.message}`, 'error');
+                        });
+                } else {
+                    termPrint('[WASM sha256_hash Ready]', 'success');
+                }
+            }
+            break;
+        }
 
         case 'clear':
             termClear();
