@@ -228,7 +228,7 @@ function executeCommand(cmd) {
             termPrint('REDTERM Commands:', 'highlight');
             termPrint('  help            - Display available commands');
             termPrint('  upload          - Upload file to WASM memory & trigger processed download');
-            termPrint('  filter <word>   - Upload a log file, filter lines via WASM & auto-download');
+            termPrint('  filter <word>   - Filter uploaded log lines via WASM (preview + download)');
             termPrint('  b64 [-e|-d] <s> - Base64 encode/decode string via WASM');
             termPrint('  hash <text>     - Compute SHA-256 hash digest via WASM');
             termPrint('  check <json>    - High-speed single-pass JSON validator via WASM');
@@ -325,36 +325,53 @@ function executeCommand(cmd) {
                             ptr = Module.ccall('filter_logs', 'number', ['string', 'string'], [fileContent, kw]);
                             if (ptr) {
                                 filteredText = Module.UTF8ToString(ptr);
-                                Module._free(ptr);
-                                ptr = 0;
                             }
                         } else {
                             // Fallback if WASM is not loaded
                             filteredText = fileContent.split('\n').filter(line => line.includes(kw)).join('\n');
                         }
 
-                        // Trigger automated browser download of filtered_logs.txt
-                        const blob = new Blob([filteredText], { type: 'text/plain;charset=utf-8' });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.style.display = 'none';
-                        a.href = url;
-                        a.download = 'filtered_logs.txt';
-                        document.body.appendChild(a);
-                        a.click();
+                        // Parse matching lines for preview
+                        const rawLines = filteredText ? filteredText.split(/\r?\n/) : [];
+                        const matchedLines = rawLines.filter(line => line.length > 0);
+                        const count = matchedLines.length;
 
-                        setTimeout(() => {
-                            document.body.removeChild(a);
-                            URL.revokeObjectURL(url);
-                        }, 100);
+                        if (count === 0) {
+                            termPrint(`No lines matching keyword '${kw}' found.`, 'warning');
+                        } else {
+                            const previewLimit = Math.min(20, count);
+                            termPrint(`--- Preview: First ${previewLimit} Matching Line(s) (Total: ${count}) ---`, 'highlight');
+                            for (let i = 0; i < previewLimit; i++) {
+                                termPrint(matchedLines[i]);
+                            }
+                            if (count > previewLimit) {
+                                termPrint(`... [${count - previewLimit} additional line(s) omitted from preview]`, 'dim');
+                            }
+                            termPrint('----------------------------------------------------', 'highlight');
 
-                        const count = filteredText ? filteredText.trim().split('\n').filter(Boolean).length : 0;
-                        termPrint(`Success: Extracted ${count} matching line(s). Triggered download for 'filtered_logs.txt'.`, 'success');
+                            // Trigger automated browser download only after displaying preview
+                            const blob = new Blob([filteredText], { type: 'text/plain;charset=utf-8' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.style.display = 'none';
+                            a.href = url;
+                            a.download = 'filtered_logs.txt';
+                            document.body.appendChild(a);
+                            a.click();
+
+                            setTimeout(() => {
+                                document.body.removeChild(a);
+                                URL.revokeObjectURL(url);
+                            }, 100);
+
+                            termPrint(`Success: Extracted ${count} matching line(s). Triggered download for 'filtered_logs.txt'.`, 'success');
+                        }
                     } catch (err) {
                         termPrint(`ERR: Log filter processing failed: ${err.message}`, 'error');
                     } finally {
                         if (ptr && typeof Module._free === 'function') {
                             Module._free(ptr);
+                            ptr = 0;
                         }
                     }
                 };
@@ -392,20 +409,23 @@ function executeCommand(cmd) {
             }
 
             if (typeof Module.ccall === 'function') {
+                let ptr = 0;
                 try {
                     const fnName = mode === 'encode' ? 'base64_encode' : 'base64_decode';
-                    const ptr = Module.ccall(fnName, 'number', ['string'], [textToProcess]);
+                    ptr = Module.ccall(fnName, 'number', ['string'], [textToProcess]);
                     if (ptr) {
                         const result = Module.UTF8ToString(ptr);
-                        if (typeof Module._free === 'function') {
-                            Module._free(ptr);
-                        }
                         termPrint(result, 'success');
                     } else {
                         termPrint('ERR: WASM Base64 returned null pointer.', 'error');
                     }
                 } catch (err) {
                     termPrint(`ERR: WASM Base64 error: ${err.message}`, 'error');
+                } finally {
+                    if (ptr && typeof Module._free === 'function') {
+                        Module._free(ptr);
+                        ptr = 0;
+                    }
                 }
             } else {
                 try {
@@ -430,19 +450,22 @@ function executeCommand(cmd) {
             }
             const textToHash = args.join(' ');
             if (typeof Module.ccall === 'function') {
+                let ptr = 0;
                 try {
-                    const ptr = Module.ccall('sha256_hash', 'number', ['string'], [textToHash]);
+                    ptr = Module.ccall('sha256_hash', 'number', ['string'], [textToHash]);
                     if (ptr) {
                         const digest = Module.UTF8ToString(ptr);
-                        if (typeof Module._free === 'function') {
-                            Module._free(ptr);
-                        }
                         termPrint(digest, 'success');
                     } else {
                         termPrint('ERR: WASM SHA-256 returned null pointer.', 'error');
                     }
                 } catch (err) {
                     termPrint(`ERR: WASM SHA-256 error: ${err.message}`, 'error');
+                } finally {
+                    if (ptr && typeof Module._free === 'function') {
+                        Module._free(ptr);
+                        ptr = 0;
+                    }
                 }
             } else {
                 if (typeof crypto !== 'undefined' && crypto.subtle) {
