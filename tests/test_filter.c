@@ -53,6 +53,26 @@ int main(void) {
     assert(strlen(res6) == 0);
     free(res6);
 
+    // Test 7: Keyword spanning across newline boundary should never match
+    char input7[] = "hello\nworld\nfoo\nbar\n";
+    char *res7a = filter_logs(input7, "o\nw");
+    assert(res7a != NULL);
+    assert(strlen(res7a) == 0);
+    free(res7a);
+
+    char *res7b = filter_logs(input7, "\n");
+    assert(res7b != NULL);
+    assert(strlen(res7b) == 0);
+    free(res7b);
+
+    // Test 8: HTML tags filtering
+    char input8[] = "<!DOCTYPE html>\n<html>\n<head><title>Test Page</title></head>\n<body><h1>Hello</h1></body>\n</html>\n";
+    char *res8 = filter_logs(input8, "title");
+    assert(res8 != NULL);
+    assert(strstr(res8, "<title>Test Page</title>") != NULL);
+    assert(strstr(res8, "<h1>Hello</h1>") == NULL);
+    free(res8);
+
     printf("All test_filter checks passed successfully!\n");
     return 0;
 }

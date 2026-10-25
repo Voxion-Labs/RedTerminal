@@ -4,7 +4,9 @@
 #include <stdbool.h>
 
 /**
- * Filter log lines containing a keyword using pure C pointers and strstr.
+ * Filter log lines containing a keyword using strict line-by-line pointer tracking.
+ * Ensures lines are strictly parsed using '\n' boundaries before applying strstr,
+ * guaranteeing that keywords are never matched across neighboring lines.
  *
  * @param input   Null-terminated input log buffer
  * @param keyword Null-terminated search term
@@ -25,6 +27,13 @@ char* filter_logs(const char *input, const char *keyword) {
         if (!copy) return NULL;
         memcpy(copy, input, in_len + 1);
         return copy;
+    }
+
+    // A keyword spanning across a newline boundary cannot match within any individual line
+    if (strchr(keyword, '\n') != NULL) {
+        char *empty = (char*)malloc(1);
+        if (empty) *empty = '\0';
+        return empty;
     }
 
     size_t kw_len = strlen(keyword);
@@ -49,10 +58,11 @@ char* filter_logs(const char *input, const char *keyword) {
     char *dst = out_buf;
     char *p = in_copy;
 
+    // Strictly parse line-by-line using \n boundaries before applying strstr
     while (*p) {
         char *line_start = p;
 
-        // Traverse to line boundary using pointer arithmetic
+        // Traverse to line boundary using pointer tracking
         while (*p && *p != '\n') {
             p++;
         }
@@ -62,7 +72,7 @@ char* filter_logs(const char *input, const char *keyword) {
             *p = '\0';
         }
 
-        // Check if line contains keyword using strstr
+        // Check if individual line contains keyword using strstr
         if (strstr(line_start, keyword) != NULL) {
             const char *src = line_start;
             while (*src) {

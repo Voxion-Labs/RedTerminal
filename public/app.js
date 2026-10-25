@@ -199,14 +199,152 @@ function openHiddenFilePicker(onFileSelected, accept = '') {
 }
 
 /**
+ * Handles 'fetch <url> | filter <keyword>' command pipeline.
+ * Hits the Go proxy (/proxy?url=...), passes the raw HTML response to the WASM filter_logs,
+ * and prints the extracted matching lines to the terminal.
+ *
+ * @param {string} cmdStr - Full command string entered by user
+ */
+async function handleFetchFilterCommand(cmdStr) {
+    const pipeIdx = cmdStr.indexOf('|');
+    if (pipeIdx === -1) {
+        // Standalone fetch command without pipe
+        const parts = cmdStr.trim().split(/\s+/);
+        const targetUrl = parts.slice(1).join(' ').trim().replace(/^["']|["']$/g, '');
+        if (!targetUrl) {
+            termPrint('Usage: fetch <url> | filter <keyword>', 'error');
+            termPrint('Example: fetch https://example.com | filter title', 'dim');
+            return;
+        }
+
+        termPrint(`Fetching ${targetUrl} via Go proxy...`, 'dim');
+        try {
+            const resp = await fetch(`/proxy?url=${encodeURIComponent(targetUrl)}`);
+            if (!resp.ok) {
+                const errText = await resp.text();
+                termPrint(`ERR: Proxy request failed (${resp.status}): ${errText || resp.statusText}`, 'error');
+                return;
+            }
+            const rawHtml = await resp.text();
+            const lines = rawHtml.split(/\r?\n/).filter(line => line.length > 0);
+            const previewLimit = Math.min(20, lines.length);
+            termPrint(`--- Fetched ${lines.length} Line(s) from ${targetUrl} (Showing ${previewLimit}) ---`, 'highlight');
+            for (let i = 0; i < previewLimit; i++) {
+                termPrint(lines[i]);
+            }
+            if (lines.length > previewLimit) {
+                termPrint(`... [${lines.length - previewLimit} additional line(s) omitted. Use '| filter <keyword>' to filter specific content]`, 'dim');
+            }
+            termPrint('----------------------------------------------------', 'highlight');
+        } catch (err) {
+            termPrint(`ERR: Failed to fetch: ${err.message}`, 'error');
+        }
+        return;
+    }
+
+    const fetchPart = cmdStr.substring(0, pipeIdx).trim();
+    const filterPart = cmdStr.substring(pipeIdx + 1).trim();
+
+    // Extract URL
+    const fetchParts = fetchPart.split(/\s+/);
+    const targetUrl = fetchParts.slice(1).join(' ').trim().replace(/^["']|["']$/g, '');
+    if (!targetUrl) {
+        termPrint('ERR: Missing target URL in fetch command.', 'error');
+        termPrint('Usage: fetch <url> | filter <keyword>', 'dim');
+        return;
+    }
+
+    // Validate pipe destination is 'filter'
+    const filterParts = filterPart.split(/\s+/);
+    const filterAction = filterParts[0] ? filterParts[0].toLowerCase() : '';
+    if (filterAction !== 'filter') {
+        termPrint(`ERR: Unsupported pipe destination '${filterAction}'. Expected 'filter'.`, 'error');
+        termPrint('Usage: fetch <url> | filter <keyword>', 'dim');
+        return;
+    }
+
+    const keyword = filterParts.slice(1).join(' ').trim().replace(/^["']|["']$/g, '');
+    if (!keyword) {
+        termPrint('ERR: Missing keyword for filter.', 'error');
+        termPrint('Usage: fetch <url> | filter <keyword>', 'dim');
+        return;
+    }
+
+    termPrint(`Fetching ${targetUrl} via Go proxy...`, 'dim');
+    let rawHtml = '';
+    try {
+        const resp = await fetch(`/proxy?url=${encodeURIComponent(targetUrl)}`);
+        if (!resp.ok) {
+            const errText = await resp.text();
+            termPrint(`ERR: Proxy request failed (${resp.status}): ${errText || resp.statusText}`, 'error');
+            return;
+        }
+        rawHtml = await resp.text();
+    } catch (err) {
+        termPrint(`ERR: Network error contacting proxy: ${err.message}`, 'error');
+        return;
+    }
+
+    termPrint(`Filtering raw HTML for keyword '${keyword}' via WASM...`, 'dim');
+
+    // Pass raw HTML to WASM filter_logs
+    let filteredText = '';
+    let ptr = 0;
+    try {
+        if (typeof Module !== 'undefined' && typeof Module.ccall === 'function') {
+            ptr = Module.ccall('filter_logs', 'number', ['string', 'string'], [rawHtml, keyword]);
+            if (ptr) {
+                filteredText = Module.UTF8ToString(ptr);
+            }
+        } else {
+            // Line-by-line fallback strictly enforcing \n boundaries matching filter.c
+            if (keyword && !keyword.includes('\n')) {
+                const lines = rawHtml.split('\n');
+                const matched = lines.filter(line => line.includes(keyword));
+                filteredText = matched.length > 0 ? matched.join('\n') + '\n' : '';
+            }
+        }
+    } catch (err) {
+        termPrint(`ERR: WASM filtering failed: ${err.message}`, 'error');
+        return;
+    } finally {
+        if (ptr && typeof Module._free === 'function') {
+            Module._free(ptr);
+            ptr = 0;
+        }
+    }
+
+    // Print extracted lines to the terminal
+    const lines = filteredText ? filteredText.split(/\r?\n/) : [];
+    const matchedLines = lines.filter(line => line.length > 0);
+
+    if (matchedLines.length === 0) {
+        termPrint(`No lines matching keyword '${keyword}' found in ${targetUrl}.`, 'warning');
+    } else {
+        termPrint(`--- Extracted Matching Line(s) (Total: ${matchedLines.length}) ---`, 'highlight');
+        for (const line of matchedLines) {
+            termPrint(line);
+        }
+        termPrint('----------------------------------------------------', 'highlight');
+        termPrint(`Extracted ${matchedLines.length} line(s) matching '${keyword}'.`, 'success');
+    }
+}
+
+/**
  * Placeholder for executing commands via WASM / Emscripten.
  * Dispatches to Module.ccall if available, or processes placeholder commands.
  *
  * @param {string} cmd - Command string entered by user
  */
-function executeCommand(cmd) {
+async function executeCommand(cmd) {
     const trimmed = cmd.trim();
     if (!trimmed) return;
+
+    // Intercept fetch & piped filter commands
+    if (trimmed.toLowerCase().startsWith('fetch') || (trimmed.includes('|') && trimmed.toLowerCase().includes('fetch'))) {
+        await handleFetchFilterCommand(trimmed);
+        return;
+    }
 
     // Check if Emscripten ccall is exported and available for general command handling
     if (typeof Module !== 'undefined' && typeof Module.ccall === 'function') {
@@ -227,6 +365,7 @@ function executeCommand(cmd) {
         case 'help':
             termPrint('REDTERM Commands:', 'highlight');
             termPrint('  help            - Display available commands');
+            termPrint('  fetch <url> | filter <kw> - Fetch URL via Go proxy & filter lines via WASM');
             termPrint('  upload          - Upload file to WASM memory & trigger processed download');
             termPrint('  filter <word>   - Filter uploaded log lines via WASM (preview + download)');
             termPrint('  b64 [-e|-d] <s> - Base64 encode/decode string via WASM');
@@ -237,6 +376,10 @@ function executeCommand(cmd) {
             termPrint('  echo [text]     - Print arguments to terminal');
             termPrint('  ps              - Display mock process table');
             termPrint('  info            - Show architecture and runtime info');
+            break;
+
+        case 'fetch':
+            await handleFetchFilterCommand(trimmed);
             break;
 
         case 'upload':
