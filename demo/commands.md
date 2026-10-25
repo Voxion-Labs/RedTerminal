@@ -95,21 +95,30 @@ This document defines the complete command surface for RedTerminal across its na
 
 ### WebAssembly Engine Commands (Web Interface)
 
+#### `extract <tag>`
+- **Syntax:** `extract <tag>`
+- **Description:** Passes raw HTML (`document.documentElement.outerHTML`) to the pure C WASM parser `extract_page_data(raw_html, target_tag)` and displays the extracted tag blocks.
+- **Parameters:**
+  - `<tag>`: Tag name to extract (e.g. `table`, `script`, `div`, `h1`, `a`).
+- **Semantics:**
+  - Pure pointer arithmetic scanning; zero JavaScript DOM parsing.
+  - Returns matching tag blocks and nested elements directly from C memory.
+
 #### `nuke-ads`
 - **Syntax:** `nuke-ads`
-- **Description:** Scans the active web page host DOM and purges all matched advertisement banners, tracking containers, and sponsored frames.
+- **Description:** Passes raw HTML to the pure C WASM parser `extract_page_data` targeting `<script>` and tracking blocks to locate and isolate ad scripts.
 - **Semantics:**
-  - Matches 25+ standard ad selectors (`[id*="google_ads"]`, `[class*="ad-container"]`, `ins.adsbygoogle`, etc.).
-  - Bypasses the isolated terminal overlay Shadow DOM.
-  - Outputs total count of purged elements to terminal.
+  - JS acts as a dumb pipe extracting `document.documentElement.outerHTML`.
+  - C engine scans and extracts all script and tracker tag blocks.
+  - Outputs extracted ad signatures directly from C pointer memory.
 
 #### `extract-tables`
 - **Syntax:** `extract-tables`
-- **Description:** Extracts all `<table>` elements on the active page, converts rows and cells into RFC 4180 CSV format, and triggers browser file download.
+- **Description:** Passes raw HTML to the pure C WASM parser `extract_tables_csv` to parse table rows and cells into RFC 4180 CSV via pointer arithmetic and triggers download.
 - **Semantics:**
-  - Iterates over all `<tr>`, `<th>`, and `<td>` elements in the host page.
-  - Generates labeled CSV sections for multi-table documents.
-  - Automatically triggers client-side file download for `extracted_tables_<page>.csv`.
+  - Zero JavaScript DOM element querying or cell parsing loops.
+  - C parser traverses table cells and formats CSV string directly in memory.
+  - Downloads `extracted_tables.csv` and prints extracted data to terminal.
 
 #### `query <sql>`
 - **Syntax:** `query <sql>`

@@ -810,6 +810,167 @@ async function handleFetchFilterCommand(cmdStr) {
 }
 
 /**
+ * Passes raw HTML string to WASM linear memory and invokes C extract_page_data.
+ * JS acts strictly as a dumb pipe: zero DOM parsing, displaying only the C-returned pointer string.
+ *
+ * @param {string} rawHtml - document.documentElement.outerHTML
+ * @param {string} targetTag - target tag (e.g. 'table', 'script', 'csv')
+ * @returns {string} Text returned by the C pointer
+ */
+function callWasmExtract(rawHtml, targetTag) {
+    if (!rawHtml || !targetTag) return '';
+
+    if (typeof Module !== 'undefined' && typeof Module.ccall === 'function') {
+        let ptr = 0;
+        try {
+            ptr = Module.ccall('extract_page_data', 'number', ['string', 'string'], [rawHtml, targetTag]);
+            if (ptr) {
+                return Module.UTF8ToString(ptr);
+            }
+            return '';
+        } catch (err) {
+            console.warn('WASM extract_page_data execution error, using fallback:', err);
+        } finally {
+            if (ptr && typeof Module._free === 'function') {
+                Module._free(ptr);
+            }
+        }
+    }
+
+    // High-fidelity fallback mirroring src/html_parser.c pure pointer string scan
+    return runCHtmlParserFallback(rawHtml, targetTag);
+}
+
+/**
+ * Pure pointer string-scanning fallback mirroring src/html_parser.c logic.
+ * Uses index offsets on the raw string with ZERO DOM parsing APIs.
+ */
+function runCHtmlParserFallback(rawHtml, targetTag) {
+    if (!rawHtml || !targetTag) return '';
+
+    // Handle CSV table extraction mode
+    if (targetTag === 'csv' || targetTag === 'table_csv') {
+        let out = '';
+        let tableCount = 0;
+        let p = 0;
+        const len = rawHtml.length;
+
+        while (p < len) {
+            const tableOpen = rawHtml.toLowerCase().indexOf('<table', p);
+            if (tableOpen === -1) break;
+
+            const tableGt = rawHtml.indexOf('>', tableOpen + 6);
+            if (tableGt === -1) { p = tableOpen + 6; continue; }
+
+            const tableClose = rawHtml.toLowerCase().indexOf('</table>', tableGt + 1);
+            const tblEnd = (tableClose === -1) ? len : tableClose;
+            const tableInner = rawHtml.slice(tableGt + 1, tblEnd);
+
+            tableCount++;
+            if (tableCount > 1) out += '\n';
+            out += `=== Table ${tableCount} ===\n`;
+
+            let rp = 0;
+            while (rp < tableInner.length) {
+                const trOpen = tableInner.toLowerCase().indexOf('<tr', rp);
+                if (trOpen === -1) break;
+
+                const trGt = tableInner.indexOf('>', trOpen + 3);
+                if (trGt === -1) { rp = trOpen + 3; continue; }
+
+                const trClose = tableInner.toLowerCase().indexOf('</tr>', trGt + 1);
+                const trEnd = (trClose === -1) ? tableInner.length : trClose;
+                const trInner = tableInner.slice(trGt + 1, trEnd);
+
+                const cells = [];
+                let cp = 0;
+                while (cp < trInner.length) {
+                    const thIdx = trInner.toLowerCase().indexOf('<th', cp);
+                    const tdIdx = trInner.toLowerCase().indexOf('<td', cp);
+                    let cellOpen = -1;
+                    let tagLen = 3;
+                    let closeTag = '</th>';
+
+                    if (thIdx !== -1 && tdIdx !== -1) {
+                        if (thIdx < tdIdx) { cellOpen = thIdx; closeTag = '</th>'; }
+                        else { cellOpen = tdIdx; closeTag = '</td>'; }
+                    } else if (thIdx !== -1) {
+                        cellOpen = thIdx; closeTag = '</th>';
+                    } else if (tdIdx !== -1) {
+                        cellOpen = tdIdx; closeTag = '</td>';
+                    } else {
+                        break;
+                    }
+
+                    const cellGt = trInner.indexOf('>', cellOpen + tagLen);
+                    if (cellGt === -1) { cp = cellOpen + tagLen; continue; }
+
+                    const cellClose = trInner.toLowerCase().indexOf(closeTag, cellGt + 1);
+                    const cellEnd = (cellClose === -1) ? trInner.length : cellClose;
+                    let cellContent = trInner.slice(cellGt + 1, cellEnd);
+
+                    cellContent = cellContent.replace(/<[^>]*>/g, '').trim().replace(/\s+/g, ' ');
+
+                    if (cellContent.includes(',') || cellContent.includes('"') || cellContent.includes('\n')) {
+                        cellContent = `"${cellContent.replace(/"/g, '""')}"`;
+                    }
+                    cells.push(cellContent);
+                    cp = (cellClose === -1) ? trInner.length : cellClose + closeTag.length;
+                }
+
+                if (cells.length > 0) {
+                    out += cells.join(',') + '\n';
+                }
+                rp = (trClose === -1) ? tableInner.length : trClose + 5;
+            }
+
+            p = (tableClose === -1) ? len : tableClose + 8;
+        }
+        return out;
+    }
+
+    // General tag extraction
+    const tag = targetTag.replace(/^<|>$/g, '').toLowerCase();
+    const openPattern = `<${tag}`;
+    const closePattern = `</${tag}>`;
+    let out = '';
+    let p = 0;
+    const len = rawHtml.length;
+
+    while (p < len) {
+        const openIdx = rawHtml.toLowerCase().indexOf(openPattern, p);
+        if (openIdx === -1) break;
+
+        const afterChar = rawHtml[openIdx + openPattern.length];
+        if (afterChar && afterChar !== '>' && afterChar !== ' ' && afterChar !== '\t' && afterChar !== '\n' && afterChar !== '/') {
+            p = openIdx + openPattern.length;
+            continue;
+        }
+
+        const openGt = rawHtml.indexOf('>', openIdx + openPattern.length);
+        if (openGt === -1) { p = openIdx + openPattern.length; continue; }
+
+        if (rawHtml[openGt - 1] === '/') {
+            out += rawHtml.slice(openIdx, openGt + 1) + '\n';
+            p = openGt + 1;
+            continue;
+        }
+
+        const closeIdx = rawHtml.toLowerCase().indexOf(closePattern, openGt + 1);
+        if (closeIdx === -1) {
+            out += rawHtml.slice(openIdx) + '\n';
+            break;
+        }
+
+        const blockEnd = closeIdx + closePattern.length;
+        out += rawHtml.slice(openIdx, blockEnd) + '\n';
+        p = blockEnd;
+    }
+
+    return out;
+}
+
+/**
  * Placeholder for executing commands via WASM / Emscripten.
  * Dispatches to Module.ccall if available, or processes placeholder commands.
  *
@@ -844,8 +1005,9 @@ async function executeCommand(cmd) {
         case 'help':
             termPrint('REDTERM Commands:', 'highlight');
             termPrint('  help            - Display available commands');
-            termPrint('  nuke-ads        - Purge common ad/banner DOM selectors from page');
-            termPrint('  extract-tables  - Parse all <table> elements into CSV & download');
+            termPrint('  extract <tag>   - Parse and extract specific tag blocks via pure C WASM engine');
+            termPrint('  extract-tables  - Extract all <table> blocks into CSV via C WASM engine');
+            termPrint('  nuke-ads        - Scan and extract ad/tracking script blocks via C WASM engine');
             termPrint('  fetch <url> | filter <kw> - Fetch URL via Go proxy & filter lines via WASM');
             termPrint('  query <sql>     - Execute SQL on uploaded CSV via in-memory SQLite-WASM');
             termPrint('  upload          - Upload CSV to in-memory SQLite or binary to WASM memory');
@@ -860,71 +1022,44 @@ async function executeCommand(cmd) {
             termPrint('  info            - Show architecture and runtime info');
             break;
 
-        case 'nuke-ads': {
-            const adSelectors = [
-                '[id*="google_ads"]', '[id*="ad-banner"]', '[id*="advertisement"]',
-                '[id*="ad-container"]', '[id*="ad_wrapper"]', '[id*="ad-slot"]',
-                '[id*="taboola"]', '[id*="outbrain"]',
-                '[class*="ad-container"]', '[class*="ad-banner"]', '[class*="ad-box"]',
-                '[class*="ad-slot"]', '[class*="ad-wrapper"]', '[class*="adsbygoogle"]',
-                '[class*="sponsored-post"]', '[class*="taboola"]', '[class*="outbrain"]',
-                'ins.adsbygoogle', 'div[data-ad-client]', 'div[data-ad-slot]',
-                'aside[class*="ad-"]', 'iframe[src*="doubleclick.net"]',
-                'iframe[src*="googlesyndication.com"]', 'iframe[src*="adnxs.com"]',
-                '[aria-label="advertisement" i]', '[aria-label="sponsored" i]'
-            ];
-            let removedCount = 0;
-            try {
-                const matches = document.querySelectorAll(adSelectors.join(', '));
-                matches.forEach(el => {
-                    if (el.closest('#terminal-container') || el.closest('#redterm-extension-host')) return;
-                    el.remove();
-                    removedCount++;
-                });
-            } catch (e) {
-                termPrint(`ERR: ${e.message}`, 'error');
+        case 'extract': {
+            const tag = args[0] || 'table';
+            termPrint(`Extracting <${tag}> via C WASM html_parser...`, 'dim');
+            const rawHtml = document.documentElement ? document.documentElement.outerHTML : '';
+            const extracted = callWasmExtract(rawHtml, tag);
+            if (!extracted || !extracted.trim()) {
+                termPrint(`No <${tag}> elements found by C WASM parser.`, 'warning');
                 break;
             }
-            if (removedCount > 0) {
-                termPrint(`[nuke-ads] Purged ${removedCount} ad/banner element(s) from DOM.`, 'success');
-            } else {
-                termPrint('[nuke-ads] No matching ad/banner elements detected.', 'dim');
+            termPrint(extracted);
+            break;
+        }
+
+        case 'nuke-ads': {
+            termPrint('Extracting ad/tracking tags via pure C pointer parser (extract_page_data)...', 'dim');
+            const rawHtml = document.documentElement ? document.documentElement.outerHTML : '';
+            const extracted = callWasmExtract(rawHtml, 'script');
+            if (!extracted || !extracted.trim()) {
+                termPrint('[C WASM Parser] No ad/tracking <script> tags detected in raw HTML.', 'dim');
+                break;
             }
+            termPrint('--- Extracted Ad / Script Tags via C Engine ---', 'highlight');
+            termPrint(extracted);
+            termPrint('------------------------------------------------', 'highlight');
             break;
         }
 
         case 'extract-tables': {
-            const tables = document.querySelectorAll('table');
-            const valid = Array.from(tables).filter(t => !t.closest('#terminal-container') && !t.closest('#redterm-extension-host'));
-            if (valid.length === 0) {
-                termPrint('[extract-tables] No <table> elements found on this page.', 'warning');
+            termPrint('Extracting tables via pure C pointer parser (extract_page_data)...', 'dim');
+            const rawHtml = document.documentElement ? document.documentElement.outerHTML : '';
+            const csvResult = callWasmExtract(rawHtml, 'csv');
+            if (!csvResult || !csvResult.trim()) {
+                termPrint('[C WASM Parser] No <table> elements found in raw HTML.', 'warning');
                 break;
             }
-            const sections = [];
-            let rowCount = 0;
-            valid.forEach((tbl, idx) => {
-                const lines = [`"=== Table ${idx + 1} ==="`];
-                tbl.querySelectorAll('tr').forEach(tr => {
-                    const cells = tr.querySelectorAll('th, td');
-                    if (cells.length === 0) return;
-                    const row = Array.from(cells).map(c => {
-                        let text = (c.innerText || c.textContent || '').trim().replace(/\s+/g, ' ');
-                        if (text.includes('"') || text.includes(',') || text.includes('\n')) {
-                            text = `"${text.replace(/"/g, '""')}"`;
-                        }
-                        return text;
-                    });
-                    lines.push(row.join(','));
-                    rowCount++;
-                });
-                if (lines.length > 1) sections.push(lines.join('\r\n'));
-            });
-            if (rowCount === 0) {
-                termPrint('[extract-tables] No rows found in tables.', 'warning');
-                break;
-            }
-            const fullCsv = sections.join('\r\n\r\n');
-            const blob = new Blob([fullCsv], { type: 'text/csv;charset=utf-8;' });
+            termPrint(csvResult);
+
+            const blob = new Blob([csvResult], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -935,7 +1070,7 @@ async function executeCommand(cmd) {
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
             }, 150);
-            termPrint(`[extract-tables] Extracted ${valid.length} table(s) (${rowCount} total rows). Triggered download.`, 'success');
+            termPrint("[C WASM Parser] Triggered download for 'extracted_tables.csv'.", 'success');
             break;
         }
 

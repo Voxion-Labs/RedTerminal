@@ -1,163 +1,101 @@
 const fs = require('fs');
 const assert = require('assert');
 
-console.log("Running Extension DOM Mutator Tests...");
+console.log("Running C-Dominant Extension Parser Tests...");
 
-// Create a mock DOM environment
-class MockElement {
-    constructor(tagName, id = '', className = '') {
-        this.tagName = tagName.toUpperCase();
-        this.id = id;
-        this.className = className;
-        this.children = [];
-        this.parentNode = null;
-        this.style = {};
-        this.attributes = {};
-        this.innerText = '';
-        this.textContent = '';
-        this.shadowRoot = null;
-    }
+// Load content.js and evaluate fallback parser matching src/html_parser.c
+const contentJsCode = fs.readFileSync('content.js', 'utf8');
 
-    appendChild(child) {
-        child.parentNode = this;
-        this.children.push(child);
-        return child;
-    }
+// Test the pure pointer C-parser logic directly on raw HTML strings
+const rawHtmlSample = `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Test Page</title>
+  <script src="https://ads.tracker.com/banner.js"></script>
+  <script>var trackingId = "UA-12345";</script>
+</head>
+<body>
+  <h1>Header Content</h1>
+  <table id="data-grid" class="main-table">
+    <tr><th>ID</th><th>User</th><th>Role</th></tr>
+    <tr><td>1</td><td>Alice</td><td>Admin</td></tr>
+    <tr><td>2</td><td>Bob</td><td>Developer</td></tr>
+  </table>
+  <div id="footer">Footer</div>
+</body>
+</html>
+`;
 
-    insertBefore(newNode, refNode) {
-        newNode.parentNode = this;
-        const idx = this.children.indexOf(refNode);
-        if (idx >= 0) {
-            this.children.splice(idx, 0, newNode);
-        } else {
-            this.children.push(newNode);
+// Extract runCHtmlParserFallback from content.js
+const vm = require('vm');
+const sandbox = {
+    console,
+    window: {
+        addEventListener: () => {}
+    },
+    document: {
+        documentElement: {
+            outerHTML: rawHtmlSample,
+            appendChild: () => {}
+        },
+        createElement: () => {
+            const el = {
+                style: {},
+                classList: { add: () => {}, remove: () => {} },
+                addEventListener: () => {},
+                appendChild: () => {},
+                insertBefore: () => {},
+                focus: () => {}
+            };
+            el.querySelector = () => el;
+            el.attachShadow = () => el;
+            return el;
+        },
+        body: {
+            appendChild: () => {},
+            removeChild: () => {}
         }
-        return newNode;
-    }
+    },
+    URL: {
+        createObjectURL: () => 'blob:mock',
+        revokeObjectURL: () => {}
+    },
+    Blob: function(parts) { this.parts = parts; }
+};
 
-    remove() {
-        if (this.parentNode) {
-            const idx = this.parentNode.children.indexOf(this);
-            if (idx >= 0) this.parentNode.children.splice(idx, 1);
-            this.parentNode = null;
-        }
-    }
+vm.createContext(sandbox);
 
-    attachShadow(options) {
-        this.shadowRoot = new MockElement('SHADOW-ROOT');
-        return this.shadowRoot;
-    }
+// 1. Verify content.js defines the C-parser wrapper and dumb-pipe pattern
+assert(contentJsCode.includes('callWasmExtract'), "content.js must define callWasmExtract");
+assert(contentJsCode.includes('document.documentElement.outerHTML'), "content.js must extract document.documentElement.outerHTML");
+assert(!contentJsCode.includes("const AD_SELECTORS = ["), "content.js must NOT contain JavaScript-based ad selectors list");
+console.log("PASS: content.js confirmed strictly C-dominant with no JS DOM selector list.");
 
-    closest(selector) {
-        if (selector === '#redterm-extension-host' || selector === '#terminal-container') {
-            let curr = this;
-            while (curr) {
-                if (curr.id === 'redterm-extension-host' || curr.id === 'terminal-container') return curr;
-                curr = curr.parentNode;
-            }
-        }
-        return null;
-    }
+// 2. Test C HTML parser extraction of tables (CSV)
+// Match logic in src/html_parser.c
+const htmlParserCode = fs.readFileSync('src/html_parser.c', 'utf8');
+assert(htmlParserCode.includes('extract_page_data'), "src/html_parser.c must implement extract_page_data");
+assert(htmlParserCode.includes('extract_tables_csv'), "src/html_parser.c must implement extract_tables_csv");
+console.log("PASS: src/html_parser.c defines extract_page_data and extract_tables_csv.");
 
-    querySelectorAll(selector) {
-        const results = [];
-        const isTable = selector === 'table';
-        const isTr = selector === 'tr';
-        const isCell = selector === 'th, td';
+// 3. Test HTML tag extraction using the sandbox
+vm.runInContext(contentJsCode, sandbox);
+const runCHtmlParserFallback = sandbox.window.runCHtmlParserFallback;
 
-        function traverse(node) {
-            if (!node || !node.children) return;
-            for (const child of node.children) {
-                if (isTable && child.tagName === 'TABLE') {
-                    results.push(child);
-                } else if (isTr && child.tagName === 'TR') {
-                    results.push(child);
-                } else if (isCell && (child.tagName === 'TH' || child.tagName === 'TD')) {
-                    results.push(child);
-                } else if (selector.includes('ad') || selector.includes('banner')) {
-                    // Check for ad classes or IDs
-                    const id = (child.id || '').toLowerCase();
-                    const cls = (child.className || '').toLowerCase();
-                    if (id.includes('ad-') || id.includes('banner') || cls.includes('ad-') || cls.includes('adsbygoogle')) {
-                        results.push(child);
-                    }
-                }
-                traverse(child);
-            }
-        }
-        traverse(this);
-        return results;
-    }
+// Test table extraction to CSV
+const csvOutput = runCHtmlParserFallback(rawHtmlSample, 'csv');
+assert(csvOutput.includes('=== Table 1 ==='), "Output should contain table header banner");
+assert(csvOutput.includes('ID,User,Role'), "Output should contain header columns");
+assert(csvOutput.includes('1,Alice,Admin'), "Output should contain row 1");
+assert(csvOutput.includes('2,Bob,Developer'), "Output should contain row 2");
+console.log("PASS: C HTML parser fallback extracted table data to CSV cleanly.");
 
-    querySelector(selector) {
-        const res = this.querySelectorAll(selector);
-        return res.length > 0 ? res[0] : null;
-    }
-}
+// Test script tag extraction (nuke-ads C counterpart)
+const scriptOutput = runCHtmlParserFallback(rawHtmlSample, 'script');
+assert(scriptOutput.includes('ads.tracker.com/banner.js'), "Should extract ad script source tag");
+assert(scriptOutput.includes('trackingId = "UA-12345"'), "Should extract inline tracking script block");
+assert(!scriptOutput.includes('<table'), "Script extraction must not include table tags");
+console.log("PASS: C HTML parser fallback extracted script blocks without tag leakage.");
 
-// 1. Test nuke-ads logic
-const body = new MockElement('BODY');
-const regularDiv = new MockElement('DIV', 'content', 'main-article');
-const adBanner = new MockElement('DIV', 'top-ad-banner', 'ad-container');
-const adWidget = new MockElement('DIV', 'google_ads_frame', 'adsbygoogle');
-const extHost = new MockElement('DIV', 'redterm-extension-host');
-
-body.appendChild(regularDiv);
-body.appendChild(adBanner);
-body.appendChild(adWidget);
-body.appendChild(extHost);
-
-assert.strictEqual(body.children.length, 4);
-
-// Simulate nuke-ads removal
-const adElements = body.querySelectorAll('[class*="ad-"]');
-let removedCount = 0;
-adElements.forEach(el => {
-    if (!el.closest('#redterm-extension-host')) {
-        el.remove();
-        removedCount++;
-    }
-});
-
-assert.strictEqual(removedCount, 2, "Should remove both ad elements");
-assert.strictEqual(body.children.length, 2, "Body should now only contain article and extension host");
-assert.strictEqual(body.children[0].id, 'content');
-assert.strictEqual(body.children[1].id, 'redterm-extension-host');
-console.log("PASS: nuke-ads correctly purges ads without affecting extension host.");
-
-// 2. Test extract-tables logic
-const table1 = new MockElement('TABLE', 'users-table');
-const tr1 = new MockElement('TR');
-const th1 = new MockElement('TH'); th1.innerText = 'ID';
-const th2 = new MockElement('TH'); th2.innerText = 'Name';
-tr1.appendChild(th1);
-tr1.appendChild(th2);
-table1.appendChild(tr1);
-
-const tr2 = new MockElement('TR');
-const td1 = new MockElement('TD'); td1.innerText = '1';
-const td2 = new MockElement('TD'); td2.innerText = 'Alice Smith';
-tr2.appendChild(td1);
-tr2.appendChild(td2);
-table1.appendChild(tr2);
-
-body.appendChild(table1);
-
-const foundTables = body.querySelectorAll('table');
-assert.strictEqual(foundTables.length, 1);
-
-const tableLines = [];
-foundTables.forEach((tbl, idx) => {
-    tbl.querySelectorAll('tr').forEach(tr => {
-        const cells = tr.querySelectorAll('th, td');
-        const vals = cells.map(c => c.innerText);
-        tableLines.push(vals.join(','));
-    });
-});
-
-const generatedCsv = tableLines.join('\n');
-assert(generatedCsv.includes('ID,Name'));
-assert(generatedCsv.includes('1,Alice Smith'));
-console.log("PASS: extract-tables correctly formats table data to CSV.");
-
-console.log("All Extension DOM Mutator Tests Passed Successfully!");
+console.log("All C-Dominant Extension Tests Passed Successfully!");

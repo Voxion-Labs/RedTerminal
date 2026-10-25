@@ -17,8 +17,8 @@ TARGET = redterm
 
 # Emscripten WASM Toolchain & Passive Library Sources
 EMCC = emcc
-EMCC_FLAGS = -I./include -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap", "UTF8ToString"]' -s EXPORTED_FUNCTIONS='["_malloc", "_free"]' -s NO_EXIT_RUNTIME=1 -O2
-WASM_SRCS = $(SRC_DIR)/crypto.c $(SRC_DIR)/filter.c $(SRC_DIR)/validator.c $(SRC_DIR)/utils.c $(SRC_DIR)/process.c $(SRC_DIR)/scheduler.c $(SRC_DIR)/shell.c
+EMCC_FLAGS = -I./include -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap", "UTF8ToString"]' -s EXPORTED_FUNCTIONS='["_malloc", "_free", "_filter_logs", "_extract_page_data", "_extract_tables_csv"]' -s NO_EXIT_RUNTIME=1 -O2
+WASM_SRCS = $(SRC_DIR)/crypto.c $(SRC_DIR)/filter.c $(SRC_DIR)/validator.c $(SRC_DIR)/utils.c $(SRC_DIR)/process.c $(SRC_DIR)/scheduler.c $(SRC_DIR)/shell.c $(SRC_DIR)/html_parser.c
 
 .PHONY: all clean run test build-wasm
 
