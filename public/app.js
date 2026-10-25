@@ -108,6 +108,20 @@ function ensureWasmMemory() {
             return 0;
         };
     }
+    if (typeof Module._scan_secrets !== 'function') {
+        Module._scan_secrets = function(ptr) {
+            const text = Module.UTF8ToString(ptr);
+            const report = typeof runCScannerFallback === 'function' ? runCScannerFallback(text) : '';
+            if (typeof TextEncoder !== 'undefined') {
+                const encoder = new TextEncoder();
+                const bytes = encoder.encode(report + '\0');
+                const outPtr = Module._malloc(bytes.length);
+                Module.HEAPU8.set(bytes, outPtr);
+                return outPtr;
+            }
+            return 0;
+        };
+    }
     if (typeof Module.UTF8ToString !== 'function') {
         Module.UTF8ToString = function(ptr) {
             if (!ptr || !Module.HEAPU8) return '';
@@ -776,17 +790,17 @@ async function handleFetchFilterCommand(cmdStr) {
         return;
     }
 
-    // Validate pipe destination is 'filter'
+    // Validate pipe destination is 'filter' or 'scan'
     const filterParts = filterPart.split(/\s+/);
     const filterAction = filterParts[0] ? filterParts[0].toLowerCase() : '';
-    if (filterAction !== 'filter') {
-        termPrint(`ERR: Unsupported pipe destination '${filterAction}'. Expected 'filter'.`, 'error');
-        termPrint('Usage: fetch <url> | filter <keyword>', 'dim');
+    if (filterAction !== 'filter' && filterAction !== 'scan') {
+        termPrint(`ERR: Unsupported pipe destination '${filterAction}'. Expected 'filter' or 'scan'.`, 'error');
+        termPrint('Usage: fetch <url> | filter <keyword>  OR  fetch <url> | scan', 'dim');
         return;
     }
 
     const keyword = filterParts.slice(1).join(' ').trim().replace(/^["']|["']$/g, '');
-    if (!keyword) {
+    if (filterAction === 'filter' && !keyword) {
         termPrint('ERR: Missing keyword for filter.', 'error');
         termPrint('Usage: fetch <url> | filter <keyword>', 'dim');
         return;
@@ -804,6 +818,14 @@ async function handleFetchFilterCommand(cmdStr) {
         rawHtml = await resp.text();
     } catch (err) {
         termPrint(`ERR: Network error contacting proxy: ${err.message}`, 'error');
+        return;
+    }
+
+    // Pipe to zero-trust scanner
+    if (filterAction === 'scan') {
+        termPrint(`Scanning fetched HTML from ${targetUrl} for exposed secrets...`, 'dim');
+        const report = callWasmScanSecrets(rawHtml);
+        renderScanReport(report);
         return;
     }
 
@@ -1014,6 +1036,305 @@ function runCHtmlParserFallback(rawHtml, targetTag) {
 }
 
 /**
+ * Calculates Shannon entropy for a string (in bits per character).
+ */
+function calculateShannonEntropy(str) {
+    if (!str || str.length === 0) return 0.0;
+    const counts = {};
+    for (let i = 0; i < str.length; i++) {
+        const c = str[i];
+        counts[c] = (counts[c] || 0) + 1;
+    }
+    let entropy = 0.0;
+    const len = str.length;
+    for (const k in counts) {
+        const p = counts[k] / len;
+        entropy -= p * (Math.log(p) / Math.LN2);
+    }
+    return entropy;
+}
+
+/**
+ * Fallback scanner mirroring src/scanner.c logic.
+ * Uses pointer-style string indexing and zero external regex libraries.
+ */
+function runCScannerFallback(text) {
+    if (!text || text.length === 0) {
+        return '[CLEAN] Zero-Trust Scanner: Empty input. 0 vulnerabilities detected.\n';
+    }
+
+    const textLen = text.length;
+    let lineNum = 1;
+    let colNum = 1;
+    let vulnIndex = 0;
+    const findings = [];
+
+    const isAlphanumeric = (c) => {
+        const code = c.charCodeAt(0);
+        return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+    };
+
+    const isTokenChar = (c) => isAlphanumeric(c) || '+/=_-'.includes(c);
+    const isDelimiter = (c) => !c || c.charCodeAt(0) <= 32 || "\"'\`<>()[]{};,:&=?\\|".includes(c);
+
+    const hasKeyword = (startIdx) => {
+        const limit = Math.max(0, startIdx - 48);
+        const lookback = text.slice(limit, startIdx).toLowerCase();
+        const kwList = ['secret', 'key', 'token', 'password', 'passwd', 'auth', 'bearer', 'credential', 'private', 'access_key', 'api', 'apikey'];
+        return kwList.some(kw => {
+            const idx = lookback.lastIndexOf(kw);
+            if (idx === -1) return false;
+            const before = idx === 0 ? ' ' : lookback[idx - 1];
+            const after = idx + kw.length >= lookback.length ? ' ' : lookback[idx + kw.length];
+            return !isAlphanumeric(before) && !isAlphanumeric(after);
+        });
+    };
+
+    let p = 0;
+    while (p < textLen) {
+        const c = text[p];
+        if (c === '\n') {
+            lineNum++;
+            colNum = 1;
+            p++;
+            continue;
+        }
+
+        const remaining = textLen - p;
+        const leftBoundary = (p === 0 || isDelimiter(text[p - 1]));
+        let found = false;
+        let matchLen = 0;
+        let ruleType = '';
+        let severity = 'HIGH';
+        let actionDesc = 'Revoke and rotate exposed credential immediately.';
+        let matchEntropy = 0.0;
+
+        if (leftBoundary) {
+            // AWS check
+            if (remaining >= 20 && (text.startsWith('AKIA', p) || text.startsWith('ASIA', p) || text.startsWith('ABIA', p) || text.startsWith('ACCA', p))) {
+                let validAws = true;
+                for (let i = 4; i < 20; i++) {
+                    const ch = text[p + i];
+                    const code = ch.charCodeAt(0);
+                    if (!((code >= 48 && code <= 57) || (code >= 65 && code <= 90))) {
+                        validAws = false;
+                        break;
+                    }
+                }
+                if (validAws && (remaining === 20 || !isAlphanumeric(text[p + 20]))) {
+                    found = true;
+                    matchLen = 20;
+                    ruleType = text.startsWith('AKIA', p) ? 'AWS Access Key ID' : 'AWS Temp Access Key ID (STS)';
+                    severity = 'CRITICAL';
+                    actionDesc = 'Revoke AWS IAM access key immediately via AWS Console / IAM.';
+                    matchEntropy = calculateShannonEntropy(text.slice(p, p + matchLen));
+                }
+            }
+
+            // Stripe check
+            if (!found && remaining >= 32 && (text.startsWith('sk_live_', p) || text.startsWith('rk_live_', p) || text.startsWith('sk_test_', p) || text.startsWith('rk_test_', p))) {
+                let len = 8;
+                while (len < remaining && isAlphanumeric(text[p + len])) len++;
+                if (len - 8 >= 24) {
+                    found = true;
+                    matchLen = len;
+                    ruleType = text.startsWith('sk_live_', p) ? 'Stripe Live Secret Key' : 'Stripe Secret Key';
+                    severity = text.includes('live') ? 'CRITICAL' : 'MEDIUM';
+                    actionDesc = 'Rotate Stripe secret key in Stripe Dashboard API settings.';
+                    matchEntropy = calculateShannonEntropy(text.slice(p, p + matchLen));
+                }
+            }
+
+            // GitHub check
+            if (!found && remaining >= 34 && (text.startsWith('ghp_', p) || text.startsWith('gho_', p) || text.startsWith('ghu_', p) || text.startsWith('ghs_', p))) {
+                let len = 4;
+                while (len < remaining && isAlphanumeric(text[p + len])) len++;
+                if (len >= 34) {
+                    found = true;
+                    matchLen = len;
+                    ruleType = text.startsWith('ghp_', p) ? 'GitHub Personal Access Token' : 'GitHub OAuth/App Token';
+                    severity = 'CRITICAL';
+                    actionDesc = 'Revoke GitHub access token immediately in developer settings.';
+                    matchEntropy = calculateShannonEntropy(text.slice(p, p + matchLen));
+                }
+            }
+
+            // GitLab check
+            if (!found && remaining >= 26 && text.startsWith('glpat-', p)) {
+                let len = 6;
+                while (len < remaining && (isAlphanumeric(text[p + len]) || text[p + len] === '-' || text[p + len] === '_')) len++;
+                if (len - 6 >= 20) {
+                    found = true;
+                    matchLen = len;
+                    ruleType = 'GitLab Personal Access Token';
+                    severity = 'CRITICAL';
+                    actionDesc = 'Revoke GitLab personal access token immediately.';
+                    matchEntropy = calculateShannonEntropy(text.slice(p, p + matchLen));
+                }
+            }
+
+            // Slack check
+            if (!found && remaining >= 24 && (text.startsWith('xoxb-', p) || text.startsWith('xoxp-', p))) {
+                let len = 5;
+                while (len < remaining && (isAlphanumeric(text[p + len]) || text[p + len] === '-')) len++;
+                if (len >= 24) {
+                    found = true;
+                    matchLen = len;
+                    ruleType = text.startsWith('xoxb-', p) ? 'Slack Bot Token' : 'Slack User Token';
+                    severity = 'HIGH';
+                    actionDesc = 'Revoke Slack token in Slack API app settings.';
+                    matchEntropy = calculateShannonEntropy(text.slice(p, p + matchLen));
+                }
+            }
+
+            // Private Key check
+            if (!found && remaining >= 27 && text.startsWith('-----BEGIN ', p)) {
+                const headerEnd = text.indexOf('PRIVATE KEY-----', p + 11);
+                if (headerEnd !== -1 && headerEnd - p <= 50) {
+                    found = true;
+                    matchLen = (headerEnd + 16) - p;
+                    ruleType = 'Cryptographic Private Key Block';
+                    severity = 'CRITICAL';
+                    actionDesc = 'Private key exposed. Regenerate keypair and replace certificate.';
+                    matchEntropy = calculateShannonEntropy(text.slice(p, p + matchLen));
+                }
+            }
+
+            // Generic high-entropy sliding window
+            if (!found) {
+                let tokenEnd = p;
+                while (tokenEnd < textLen && isTokenChar(text[tokenEnd])) tokenEnd++;
+                const tokenLen = tokenEnd - p;
+
+                if (tokenLen >= 16 && tokenLen <= 128) {
+                    const token = text.slice(p, tokenEnd);
+                    const ent = calculateShannonEntropy(token);
+                    const keywordPresent = hasKeyword(p);
+
+                    let upper = 0, lower = 0, digits = 0, special = 0;
+                    for (let i = 0; i < token.length; i++) {
+                        const code = token.charCodeAt(i);
+                        if (code >= 65 && code <= 90) upper++;
+                        else if (code >= 97 && code <= 122) lower++;
+                        else if (code >= 48 && code <= 57) digits++;
+                        else special++;
+                    }
+                    const classesPresent = (upper > 0) + (lower > 0) + (digits > 0) + (special > 0);
+
+                    if (keywordPresent && classesPresent >= 2 && ent >= 3.5) {
+                        found = true;
+                        matchLen = tokenLen;
+                        ruleType = 'High-Entropy Secret / Token (Keyword Associated)';
+                        severity = 'HIGH';
+                        actionDesc = 'Verify if token is an active credential or secret key.';
+                        matchEntropy = ent;
+                    } else if (tokenLen >= 24 && classesPresent >= 3 && ent >= 4.2) {
+                        found = true;
+                        matchLen = tokenLen;
+                        ruleType = 'Generic High-Entropy Secret (High Randomness)';
+                        severity = 'MEDIUM';
+                        actionDesc = 'High-entropy token detected. Review for exposed credentials.';
+                        matchEntropy = ent;
+                    }
+                }
+            }
+        }
+
+        if (found && matchLen > 0) {
+            vulnIndex++;
+            let preview = text.slice(p, p + matchLen);
+            if (matchLen > 48) {
+                preview = preview.slice(0, 24) + '...[REDACTED]...' + preview.slice(-12);
+            }
+
+            findings.push(
+                `[VULN #${vulnIndex}] ${severity} - ${ruleType}\n` +
+                `  Location: Line ${lineNum}, Column ${colNum}\n` +
+                `  Entropy:  ${matchEntropy.toFixed(2)} bits/char\n` +
+                `  Match:    ${preview}\n` +
+                `  Action:   ${actionDesc}\n`
+            );
+
+            p += matchLen;
+            colNum += matchLen;
+            continue;
+        }
+
+        p++;
+        colNum++;
+    }
+
+    if (findings.length > 0) {
+        return `[!] ZERO-TRUST SCANNER: ${findings.length} VULNERABILITY(IES) DETECTED\n` +
+               `================================================================================\n` +
+               findings.join('\n') +
+               `================================================================================\n` +
+               `Summary: ${findings.length} security vulnerability(ies) identified in text.\n`;
+    }
+
+    return `[CLEAN] Zero-Trust Scanner: 0 vulnerabilities detected.\n` +
+           `No known secret prefixes or high-entropy tokens found.\n`;
+}
+
+/**
+ * Calls the pure C11 exported scan_secrets function via Emscripten ccall.
+ *
+ * @param {string} text - Input text to scan
+ * @returns {string} Formatted vulnerability report
+ */
+function callWasmScanSecrets(text) {
+    if (!text) {
+        return '[CLEAN] Zero-Trust Scanner: Empty input. 0 vulnerabilities detected.\n';
+    }
+
+    ensureWasmMemory();
+
+    if (typeof Module !== 'undefined' && typeof Module.ccall === 'function') {
+        let ptr = 0;
+        try {
+            ptr = Module.ccall('scan_secrets', 'number', ['string'], [text]);
+            if (ptr) {
+                return Module.UTF8ToString(ptr);
+            }
+        } catch (err) {
+            console.warn('WASM scan_secrets execution error, using fallback:', err);
+        } finally {
+            if (ptr && typeof Module._free === 'function') {
+                Module._free(ptr);
+            }
+        }
+    }
+
+    return runCScannerFallback(text);
+}
+
+/**
+ * Renders the Zero-Trust scanner findings to the terminal UI.
+ * Any detected vulnerabilities are printed strictly in red text (term-error).
+ *
+ * @param {string} report - Formatted report string from scan_secrets
+ */
+function renderScanReport(report) {
+    if (!report) return;
+    const lines = report.split('\n');
+    const isVulnerable = report.includes('[!] ZERO-TRUST SCANNER') || report.includes('[VULN #');
+
+    if (isVulnerable) {
+        for (const line of lines) {
+            if (line.trim().length > 0) {
+                termPrint(line, 'error');
+            }
+        }
+    } else {
+        for (const line of lines) {
+            if (line.trim().length > 0) {
+                termPrint(line, 'success');
+            }
+        }
+    }
+}
+
+/**
  * Formats byte counts into human-readable strings (e.g. 5.00 MB).
  *
  * @param {number} bytes - Byte count
@@ -1197,6 +1518,7 @@ async function executeCommand(cmd) {
             termPrint('  nuke-ads        - Scan and extract ad/tracking script blocks via C WASM engine');
             termPrint('  fetch <url> | filter <kw> - Fetch URL via Go proxy & filter lines via WASM');
             termPrint('  query <sql>     - Execute SQL on uploaded CSV via in-memory SQLite-WASM');
+            termPrint('  scan [text]     - Zero-Trust secret & high-entropy credential scanner (C engine)');
             termPrint('  upload          - Upload large files in 5MB slices to WASM memory chunker');
             termPrint('  filter <word>   - Filter uploaded log lines via WASM (preview + download)');
             termPrint('  b64 [-e|-d] <s> - Base64 encode/decode string via WASM');
@@ -1273,6 +1595,25 @@ async function executeCommand(cmd) {
                 break;
             }
             await executeSqlQuery(sqlQuery);
+            break;
+        }
+
+        case 'scan': {
+            let scanInput = args.join(' ').trim();
+            if (!scanInput) {
+                if (typeof document !== 'undefined' && document.documentElement && document.documentElement.outerHTML) {
+                    scanInput = document.documentElement.outerHTML;
+                    termPrint('No argument provided: scanning current web page DOM for exposed secrets...', 'dim');
+                } else {
+                    termPrint('Usage: scan <text>', 'error');
+                    termPrint('Example: scan AWS_KEY=AKIAIOSFODNN7EXAMPLE', 'dim');
+                    break;
+                }
+            }
+
+            termPrint('Analyzing text with Zero-Trust Secret Scanner (pure C pointer engine)...', 'dim');
+            const report = callWasmScanSecrets(scanInput);
+            renderScanReport(report);
             break;
         }
 

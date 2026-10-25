@@ -18,6 +18,7 @@ This document defines the complete command surface for RedTerminal across its na
 | `extract-tables` | Extension / Web | Parses all `<table>` elements into CSV and triggers automated download. | None |
 | `fetch <url> \| filter <kw>` | Web | Scrapes URL via Go CORS proxy and extracts matching lines via WASM log filter. | `<url>` and `<keyword>` |
 | `query` | Web | Executes SQL against an in-memory CSV temporary table via SQLite-WASM. | `<sql_query>` (string) |
+| `scan` | Web / Extension | Scans text or DOM for exposed secrets & high-entropy credentials via pure C pointer engine. | `[text]` (optional string, defaults to DOM) |
 | `upload` | Web | Streams massive files in 5MB slices using `File.slice()` to pure C11 `process_chunk`, keeping RAM strictly flat. | None (triggers file picker dialog) |
 | `filter` | Web | Performs pointer-based substring extraction on log lines via WASM. | `<keyword>` (string) |
 | `b64` | Web | Encodes or decodes text via RFC 4648 Base64 WASM engine. | `[-e\|-d] <text>` (flag and string) |
@@ -129,6 +130,22 @@ This document defines the complete command surface for RedTerminal across its na
   - Connects to in-memory SQLite table (`temp_table`, with aliases `csv_data`, `data`, and `<filename>`).
   - Formats output as an aligned ASCII terminal table.
   - If no CSV table is loaded, automatically opens file picker to load a CSV and executes query upon selection.
+
+#### `scan [text]`
+- **Syntax:** `scan [text]`
+- **Description:** Scans inline text or the current active page DOM for exposed credentials, secret prefixes, and high-entropy cryptographic keys using a sliding window written in pure C11 pointer arithmetic.
+- **Rules & Patterns Detected:**
+  - **AWS Access Keys:** `AKIA` / `ASIA` + 16 alphanumeric characters (20 chars total).
+  - **Stripe Keys:** `sk_live_`, `rk_live_`, `sk_test_`, `rk_test_` + 24+ base62 characters.
+  - **GitHub Tokens:** `ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`.
+  - **GitLab Tokens:** `glpat-` + 20+ characters.
+  - **Slack Tokens:** `xoxb-`, `xoxp-`, `xoxa-`.
+  - **Google / Firebase API Keys:** `AIza` + 35 characters.
+  - **Cryptographic Private Keys:** `-----BEGIN ... PRIVATE KEY-----`.
+  - **Generic High-Entropy Secrets:** Sliding window Shannon entropy calculation ($H \ge 3.6$ with keyword, or $H \ge 4.2$ with high randomness).
+- **Output:**
+  - Outputs line and column coordinates, matched entropy (bits/character), and mitigation actions.
+  - Any detected vulnerabilities are printed in red text (`term-error`) directly to the terminal UI.
 
 #### `fetch <url> | filter <keyword>`
 - **Syntax:** `fetch <url> | filter <keyword>`
