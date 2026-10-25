@@ -14,7 +14,9 @@ This document defines the complete command surface for RedTerminal across its na
 | `resume` | Native | Restores suspended process to active execution. | `<pid>` (integer) |
 | `ps` | Native / Web | Dumps active Process Control Block records. | None |
 | `logs` | Native | Streams raw events from `redterm.log`. | None |
-| `upload` | Web | Ingests file into WASM memory via `_malloc` and triggers processed download. | None (triggers file picker dialog) |
+| `fetch <url> \| filter <kw>` | Web | Scrapes URL via Go CORS proxy and extracts matching lines via WASM log filter. | `<url>` and `<keyword>` |
+| `query` | Web | Executes SQL against an in-memory CSV temporary table via SQLite-WASM. | `<sql_query>` (string) |
+| `upload` | Web | Ingests CSV to in-memory SQLite table or binary to WASM memory via `_malloc`. | None (triggers file picker dialog) |
 | `filter` | Web | Performs pointer-based substring extraction on log lines via WASM. | `<keyword>` (string) |
 | `b64` | Web | Encodes or decodes text via RFC 4648 Base64 WASM engine. | `[-e\|-d] <text>` (flag and string) |
 | `hash` | Web | Generates a 64-character lowercase SHA-256 hex digest via WASM. | `<text>` (string) |
@@ -90,6 +92,27 @@ This document defines the complete command surface for RedTerminal across its na
 ---
 
 ### WebAssembly Engine Commands (Web Interface)
+
+#### `query <sql>`
+- **Syntax:** `query <sql>`
+- **Description:** Executes SQL against client-side in-memory SQLite database populated from uploaded CSV files.
+- **Parameters:**
+  - `<sql>`: SQLite SQL query string (e.g. `SELECT * FROM temp_table WHERE age > 30 ORDER BY name LIMIT 10`).
+- **Semantics:**
+  - Connects to in-memory SQLite table (`temp_table`, with aliases `csv_data`, `data`, and `<filename>`).
+  - Formats output as an aligned ASCII terminal table.
+  - If no CSV table is loaded, automatically opens file picker to load a CSV and executes query upon selection.
+
+#### `fetch <url> | filter <keyword>`
+- **Syntax:** `fetch <url> | filter <keyword>`
+- **Description:** Scrapes any web URL via the RedTerminal Go CORS proxy and filters matching lines via WASM `filter_logs`.
+- **Parameters:**
+  - `<url>`: Target URL to fetch raw HTML from.
+  - `<keyword>`: Substring term to search for across lines.
+- **Semantics:**
+  - Performs an HTTP GET request to `/proxy?url=<target>`.
+  - Passes received HTML buffer into WASM `filter_logs` bounded strictly by newline boundaries.
+  - Outputs matching lines directly to the terminal display.
 
 #### `upload`
 - **Syntax:** `upload`

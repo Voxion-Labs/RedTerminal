@@ -198,6 +198,485 @@ function openHiddenFilePicker(onFileSelected, accept = '') {
     picker.click();
 }
 
+// ==========================================
+// SQLite-WASM & CSV In-Memory Database Engine
+// ==========================================
+
+let sqlite3Instance = null;
+let activeSqliteDb = null;
+let activeDbMetadata = null;
+
+/**
+ * Fallback in-memory SQL database for offline / isolated environments.
+ */
+class FallbackSqliteDb {
+    constructor() {
+        this.tables = {};
+        this.isFallback = true;
+    }
+
+    exec(options) {
+        const sql = (typeof options === 'string' ? options : options.sql || '').trim();
+        if (!sql) return;
+
+        const callback = typeof options === 'object' && typeof options.callback === 'function' ? options.callback : null;
+        const columnNames = typeof options === 'object' && Array.isArray(options.columnNames) ? options.columnNames : null;
+
+        const statements = sql.split(';').map(s => s.trim()).filter(Boolean);
+        for (const stmt of statements) {
+            // Ignore transaction control
+            if (/^(BEGIN|COMMIT|ROLLBACK)/i.test(stmt)) continue;
+
+            // DROP TABLE
+            const dropMatch = stmt.match(/DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?["`]?([a-zA-Z0-9_]+)["`]?/i);
+            if (dropMatch) {
+                delete this.tables[dropMatch[1].toLowerCase()];
+                continue;
+            }
+
+            // CREATE TABLE
+            const createMatch = stmt.match(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?([a-zA-Z0-9_]+)["`]?\s*\((.*)\)/is);
+            if (createMatch) {
+                const tblName = createMatch[1].toLowerCase();
+                const colsDef = createMatch[2].split(',').map(c => {
+                    const p = c.trim().split(/\s+/);
+                    return p[0].replace(/["`]/g, '').toLowerCase();
+                });
+                this.tables[tblName] = { columns: colsDef, rows: [] };
+                continue;
+            }
+
+            // CREATE VIEW
+            const viewMatch = stmt.match(/CREATE\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?([a-zA-Z0-9_]+)["`]?\s+AS\s+SELECT\s+\*\s+FROM\s+["`]?([a-zA-Z0-9_]+)["`]?/is);
+            if (viewMatch) {
+                const alias = viewMatch[1].toLowerCase();
+                const target = viewMatch[2].toLowerCase();
+                if (this.tables[target]) {
+                    this.tables[alias] = this.tables[target];
+                }
+                continue;
+            }
+
+            // INSERT INTO
+            const insertMatch = stmt.match(/INSERT\s+INTO\s+["`]?([a-zA-Z0-9_]+)["`]?\s*(?:\([^)]*\))?\s*VALUES\s*\((.*)\)/is);
+            if (insertMatch) {
+                const tblName = insertMatch[1].toLowerCase();
+                const tbl = this.tables[tblName];
+                if (tbl) {
+                    const rawVals = insertMatch[2].split(',').map(v => {
+                        v = v.trim();
+                        if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) {
+                            return v.slice(1, -1).replace(/''/g, "'");
+                        }
+                        if (v.toLowerCase() === 'null') return null;
+                        const num = Number(v);
+                        return isNaN(num) ? v : num;
+                    });
+                    tbl.rows.push(rawVals);
+                }
+                continue;
+            }
+
+            // SELECT
+            if (/^SELECT/i.test(stmt)) {
+                const fromMatch = stmt.match(/FROM\s+["`]?([a-zA-Z0-9_]+)["`]?/i);
+                const tblName = fromMatch ? fromMatch[1].toLowerCase() : Object.keys(this.tables)[0];
+                const tbl = this.tables[tblName] || { columns: ['col'], rows: [] };
+
+                let selectedCols = tbl.columns;
+                const selectColsMatch = stmt.match(/SELECT\s+(.*?)\s+FROM/is);
+                if (selectColsMatch && selectColsMatch[1].trim() !== '*') {
+                    const colsRaw = selectColsMatch[1].split(',').map(c => c.trim().replace(/["`]/g, '').toLowerCase());
+                    if (colsRaw.length === 1 && /^count\s*\(\s*\*\s*\)/i.test(colsRaw[0])) {
+                        if (columnNames) columnNames.push('count(*)');
+                        if (callback) callback([tbl.rows.length]);
+                        return;
+                    }
+                    selectedCols = colsRaw;
+                }
+
+                if (columnNames) {
+                    for (const col of selectedCols) {
+                        columnNames.push(col);
+                    }
+                }
+
+                const colIndices = selectedCols.map(c => tbl.columns.indexOf(c));
+                let resRows = tbl.rows.slice();
+
+                // WHERE
+                const whereMatch = stmt.match(/WHERE\s+(.*?)(?:\s+ORDER\s+BY|\s+LIMIT|$)/is);
+                if (whereMatch) {
+                    const cond = whereMatch[1].trim();
+                    const m = cond.match(/["`]?([a-zA-Z0-9_]+)["`]?\s*(=|!=|>|<|>=|<=|LIKE)\s*(.*)/i);
+                    if (m) {
+                        const colName = m[1].toLowerCase();
+                        const op = m[2].toUpperCase();
+                        let targetVal = m[3].trim().replace(/^['"]|['"]$/g, '');
+                        const colIdx = tbl.columns.indexOf(colName);
+                        if (colIdx !== -1) {
+                            resRows = resRows.filter(r => {
+                                const v = r[colIdx];
+                                if (op === '=') return String(v).toLowerCase() === targetVal.toLowerCase();
+                                if (op === '!=') return String(v).toLowerCase() !== targetVal.toLowerCase();
+                                if (op === '>') return Number(v) > Number(targetVal);
+                                if (op === '<') return Number(v) < Number(targetVal);
+                                if (op === '>=') return Number(v) >= Number(targetVal);
+                                if (op === '<=') return Number(v) <= Number(targetVal);
+                                if (op === 'LIKE') {
+                                    const reg = new RegExp('^' + targetVal.replace(/%/g, '.*').replace(/_/g, '.') + '$', 'i');
+                                    return reg.test(String(v));
+                                }
+                                return true;
+                            });
+                        }
+                    }
+                }
+
+                // ORDER BY
+                const orderMatch = stmt.match(/ORDER\s+BY\s+["`]?([a-zA-Z0-9_]+)["`]?(?:\s+(ASC|DESC))?/i);
+                if (orderMatch) {
+                    const colName = orderMatch[1].toLowerCase();
+                    const isDesc = (orderMatch[2] || '').toUpperCase() === 'DESC';
+                    const colIdx = tbl.columns.indexOf(colName);
+                    if (colIdx !== -1) {
+                        resRows.sort((a, b) => {
+                            const valA = a[colIdx];
+                            const valB = b[colIdx];
+                            const cmp = valA < valB ? -1 : (valA > valB ? 1 : 0);
+                            return isDesc ? -cmp : cmp;
+                        });
+                    }
+                }
+
+                // LIMIT
+                const limitMatch = stmt.match(/LIMIT\s+(\d+)/i);
+                if (limitMatch) {
+                    const lim = parseInt(limitMatch[1], 10);
+                    resRows = resRows.slice(0, lim);
+                }
+
+                for (const r of resRows) {
+                    const projRow = colIndices.map(idx => (idx !== -1 ? r[idx] : null));
+                    if (callback) callback(projRow);
+                }
+            }
+        }
+    }
+
+    close() {
+        this.tables = {};
+    }
+}
+
+/**
+ * Initializes SQLite-WASM from official CDN or falls back to in-memory SQL engine.
+ */
+async function initSqliteWasm() {
+    if (sqlite3Instance) return sqlite3Instance;
+    if (window.sqlite3) {
+        sqlite3Instance = window.sqlite3;
+        return sqlite3Instance;
+    }
+
+    try {
+        termPrint('Initializing SQLite-WASM subsystem...', 'dim');
+        let initFn = window.sqlite3InitModule;
+        if (!initFn) {
+            const cdnUrls = [
+                'https://cdn.jsdelivr.net/npm/@sqlite.org/sqlite-wasm/sqlite-wasm/jswasm/sqlite3-bundler-friendly.mjs',
+                'https://unpkg.com/@sqlite.org/sqlite-wasm/sqlite-wasm/jswasm/sqlite3-bundler-friendly.mjs'
+            ];
+            for (const url of cdnUrls) {
+                try {
+                    const mod = await import(url);
+                    initFn = mod.default || mod;
+                    if (initFn) break;
+                } catch (e) {
+                    console.warn(`Failed loading from ${url}:`, e);
+                }
+            }
+        }
+
+        if (typeof initFn === 'function') {
+            sqlite3Instance = await initFn({
+                print: (msg) => console.log('[sqlite3]', msg),
+                printErr: (msg) => console.error('[sqlite3]', msg)
+            });
+            window.sqlite3 = sqlite3Instance;
+            termPrint(`SQLite-WASM core ready (v${sqlite3Instance.version ? sqlite3Instance.version.libVersion : '3.x'}).`, 'success');
+            return sqlite3Instance;
+        }
+    } catch (err) {
+        console.warn('SQLite-WASM initialization failed, using in-memory engine fallback:', err);
+    }
+
+    termPrint('SQLite-WASM running with local in-memory SQL fallback engine.', 'dim');
+    return null;
+}
+
+/**
+ * Parses CSV text compliant with RFC 4180.
+ *
+ * @param {string} text - Raw CSV content
+ * @returns {Array<Array<string>>} Array of row arrays
+ */
+function parseCSV(text) {
+    const lines = [];
+    let row = [];
+    let current = '';
+    let inQuotes = false;
+    let i = 0;
+
+    while (i < text.length) {
+        const char = text[i];
+        const nextChar = text[i + 1];
+
+        if (char === '"') {
+            if (inQuotes && nextChar === '"') {
+                current += '"';
+                i += 2;
+                continue;
+            } else {
+                inQuotes = !inQuotes;
+                i++;
+                continue;
+            }
+        }
+
+        if (!inQuotes) {
+            if (char === ',') {
+                row.push(current.trim());
+                current = '';
+                i++;
+                continue;
+            }
+            if (char === '\r') {
+                if (nextChar === '\n') i++;
+                row.push(current.trim());
+                if (row.some(val => val.length > 0)) lines.push(row);
+                row = [];
+                current = '';
+                i++;
+                continue;
+            }
+            if (char === '\n') {
+                row.push(current.trim());
+                if (row.some(val => val.length > 0)) lines.push(row);
+                row = [];
+                current = '';
+                i++;
+                continue;
+            }
+        }
+
+        current += char;
+        i++;
+    }
+
+    if (current.length > 0 || row.length > 0) {
+        row.push(current.trim());
+        if (row.some(val => val.length > 0)) lines.push(row);
+    }
+
+    return lines;
+}
+
+/**
+ * Formats table rows into clean aligned ASCII terminal lines.
+ */
+function formatTerminalTable(headers, rows) {
+    if (!headers || headers.length === 0) return ['Empty result set (0 columns).'];
+
+    const colWidths = headers.map((h, i) => {
+        let maxLen = String(h).length;
+        for (const row of rows) {
+            const val = row[i];
+            const str = val === null || val === undefined ? 'NULL' : String(val);
+            if (str.length > maxLen) maxLen = str.length;
+        }
+        return Math.max(maxLen, 3);
+    });
+
+    const headerLine = headers.map((h, i) => String(h).padEnd(colWidths[i])).join(' | ');
+    const sepLine = colWidths.map(w => '-'.repeat(w)).join('-+-');
+
+    const lines = [headerLine, sepLine];
+    for (const row of rows) {
+        const rowLine = headers.map((_, i) => {
+            const val = row[i];
+            const str = val === null || val === undefined ? 'NULL' : String(val);
+            return str.padEnd(colWidths[i]);
+        }).join(' | ');
+        lines.push(rowLine);
+    }
+    return lines;
+}
+
+/**
+ * Automatically creates an in-memory SQLite database, parses the CSV headers and rows,
+ * and inserts them into a temporary table ('temp_table').
+ *
+ * @param {string} csvText - Raw CSV text
+ * @param {string} filename - Source filename for labeling
+ */
+async function loadCSVIntoDatabase(csvText, filename = 'data.csv') {
+    termPrint(`Parsing CSV '${filename}'...`, 'dim');
+    const parsed = parseCSV(csvText);
+    if (!parsed || parsed.length === 0) {
+        termPrint('ERR: Uploaded CSV file is empty.', 'error');
+        return;
+    }
+
+    const rawHeaders = parsed[0];
+    const dataRows = parsed.slice(1);
+
+    if (rawHeaders.length === 0) {
+        termPrint('ERR: No headers found in CSV.', 'error');
+        return;
+    }
+
+    // Sanitize headers to clean SQL column identifiers
+    const seen = new Set();
+    const cleanHeaders = rawHeaders.map((h, idx) => {
+        let name = h.trim().replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+        if (!name || /^[0-9]/.test(name)) name = 'col_' + (name || idx + 1);
+        let uniqueName = name;
+        let counter = 2;
+        while (seen.has(uniqueName)) {
+            uniqueName = `${name}_${counter++}`;
+        }
+        seen.add(uniqueName);
+        return uniqueName;
+    });
+
+    // Invert/infer column types
+    const colTypes = cleanHeaders.map((_, colIdx) => {
+        let isInt = true;
+        let isReal = true;
+        let count = 0;
+        for (const r of dataRows) {
+            const val = r[colIdx];
+            if (val === undefined || val === '') continue;
+            count++;
+            if (!/^-?\d+$/.test(val)) isInt = false;
+            if (!/^-?\d+(\.\d+)?$/.test(val)) isReal = false;
+        }
+        if (count > 0 && isInt) return 'INTEGER';
+        if (count > 0 && isReal) return 'REAL';
+        return 'TEXT';
+    });
+
+    // Initialize SQLite-WASM or Fallback
+    const sqlite = await initSqliteWasm();
+
+    if (activeSqliteDb) {
+        try { activeSqliteDb.close(); } catch (_) {}
+        activeSqliteDb = null;
+    }
+
+    if (sqlite && sqlite.oo1 && sqlite.oo1.DB) {
+        activeSqliteDb = new sqlite.oo1.DB(':memory:', 'c');
+    } else {
+        activeSqliteDb = new FallbackSqliteDb();
+    }
+
+    // Build temporary table
+    const colDefs = cleanHeaders.map((c, i) => `"${c}" ${colTypes[i]}`).join(', ');
+    activeSqliteDb.exec(`DROP TABLE IF EXISTS temp_table;`);
+    activeSqliteDb.exec(`CREATE TABLE temp_table (${colDefs});`);
+
+    // Views for convenient alias access
+    activeSqliteDb.exec(`CREATE VIEW IF NOT EXISTS csv_data AS SELECT * FROM temp_table;`);
+    activeSqliteDb.exec(`CREATE VIEW IF NOT EXISTS data AS SELECT * FROM temp_table;`);
+    const sanitizedBase = filename.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+    if (sanitizedBase && sanitizedBase !== 'temp_table') {
+        activeSqliteDb.exec(`CREATE VIEW IF NOT EXISTS "${sanitizedBase}" AS SELECT * FROM temp_table;`);
+    }
+
+    // Insert rows in batch transaction
+    activeSqliteDb.exec('BEGIN TRANSACTION;');
+    for (const r of dataRows) {
+        const valSql = cleanHeaders.map((_, i) => {
+            const v = r[i];
+            if (v === undefined || v === null || v === '') return 'NULL';
+            if (colTypes[i] === 'INTEGER' || colTypes[i] === 'REAL') {
+                if (/^-?\d+(\.\d+)?$/.test(v)) return v;
+            }
+            return `'${String(v).replace(/'/g, "''")}'`;
+        }).join(', ');
+        activeSqliteDb.exec(`INSERT INTO temp_table VALUES (${valSql});`);
+    }
+    activeSqliteDb.exec('COMMIT;');
+
+    activeDbMetadata = {
+        filename,
+        columns: cleanHeaders,
+        rowCount: dataRows.length
+    };
+
+    termPrint(`In-memory SQLite database initialized successfully.`, 'success');
+    termPrint(`Table 'temp_table' created with columns: ${cleanHeaders.join(', ')}`, 'dim');
+    termPrint(`Inserted ${dataRows.length} row(s) from '${filename}'.`, 'success');
+    termPrint(`Ready! Run 'query <sql>' (e.g. query SELECT * FROM temp_table LIMIT 5)`, 'highlight');
+}
+
+/**
+ * Executes a user SQL string against the in-memory SQLite temporary table
+ * and prints formatted results directly to the terminal UI.
+ *
+ * @param {string} sql - SQL query string
+ */
+async function executeSqlQuery(sql) {
+    if (!activeSqliteDb) {
+        termPrint('No active in-memory CSV table found. Select a CSV file to load and query...', 'dim');
+        openHiddenFilePicker((file) => {
+            termPrint(`Loading '${file.name}'...`, 'highlight');
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                await loadCSVIntoDatabase(e.target.result, file.name);
+                // Immediately execute query once table is loaded
+                await executeSqlQuery(sql);
+            };
+            reader.readAsText(file);
+        }, '.csv,text/csv,.txt');
+        return;
+    }
+
+    termPrint(`SQL> ${sql}`, 'dim');
+
+    const columns = [];
+    const rows = [];
+    const isSelect = /^\s*(SELECT|PRAGMA|EXPLAIN|WITH)/i.test(sql);
+
+    try {
+        activeSqliteDb.exec({
+            sql: sql,
+            columnNames: columns,
+            rowMode: 'array',
+            callback: (row) => {
+                rows.push(row);
+            }
+        });
+
+        if (isSelect || rows.length > 0 || columns.length > 0) {
+            if (rows.length === 0) {
+                termPrint('Query executed successfully. (0 rows returned)', 'warning');
+            } else {
+                const lines = formatTerminalTable(columns, rows);
+                for (const line of lines) {
+                    termPrint(line);
+                }
+                termPrint(`(${rows.length} row${rows.length === 1 ? '' : 's'} returned)`, 'success');
+            }
+        } else {
+            termPrint('Query executed successfully.', 'success');
+        }
+    } catch (err) {
+        termPrint(`SQL ERROR: ${err.message}`, 'error');
+    }
+}
+
 /**
  * Handles 'fetch <url> | filter <keyword>' command pipeline.
  * Hits the Go proxy (/proxy?url=...), passes the raw HTML response to the WASM filter_logs,
@@ -366,7 +845,8 @@ async function executeCommand(cmd) {
             termPrint('REDTERM Commands:', 'highlight');
             termPrint('  help            - Display available commands');
             termPrint('  fetch <url> | filter <kw> - Fetch URL via Go proxy & filter lines via WASM');
-            termPrint('  upload          - Upload file to WASM memory & trigger processed download');
+            termPrint('  query <sql>     - Execute SQL on uploaded CSV via in-memory SQLite-WASM');
+            termPrint('  upload          - Upload CSV to in-memory SQLite or binary to WASM memory');
             termPrint('  filter <word>   - Filter uploaded log lines via WASM (preview + download)');
             termPrint('  b64 [-e|-d] <s> - Base64 encode/decode string via WASM');
             termPrint('  hash <text>     - Compute SHA-256 hash digest via WASM');
@@ -382,10 +862,38 @@ async function executeCommand(cmd) {
             await handleFetchFilterCommand(trimmed);
             break;
 
+        case 'query': {
+            const sqlQuery = args.join(' ').trim();
+            if (!sqlQuery) {
+                termPrint('Usage: query <sql>', 'error');
+                termPrint('Example: query SELECT * FROM temp_table LIMIT 5', 'dim');
+                break;
+            }
+            await executeSqlQuery(sqlQuery);
+            break;
+        }
+
         case 'upload':
             termPrint('Opening file picker...', 'dim');
             openHiddenFilePicker((file) => {
                 termPrint(`Selected: ${file.name} (${file.size} bytes)`, 'highlight');
+                const isCsv = file.name.toLowerCase().endsWith('.csv') || file.type === 'text/csv';
+                if (isCsv) {
+                    const reader = new FileReader();
+                    reader.onload = async function(e) {
+                        try {
+                            await loadCSVIntoDatabase(e.target.result, file.name);
+                        } catch (err) {
+                            termPrint(`ERR: Failed to process CSV: ${err.message}`, 'error');
+                        }
+                    };
+                    reader.onerror = function() {
+                        termPrint('ERR: Failed to read selected CSV file.', 'error');
+                    };
+                    reader.readAsText(file);
+                    return;
+                }
+
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     let inPtr = 0;
