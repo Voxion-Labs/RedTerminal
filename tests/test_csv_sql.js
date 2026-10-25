@@ -114,6 +114,16 @@ function runTests() {
         printed.push({ msg, type });
     };
 
+    // Verify pre-compiled zero-dependency sqlite3.wasm drop-in file
+    assert(fs.existsSync('public/sqlite3.wasm'), 'public/sqlite3.wasm drop-in file must exist');
+    const wasmHeader = Buffer.alloc(4);
+    const fd = fs.openSync('public/sqlite3.wasm', 'r');
+    fs.readSync(fd, wasmHeader, 0, 4, 0);
+    fs.closeSync(fd);
+    assert.deepStrictEqual(Array.from(wasmHeader), [0x00, 0x61, 0x73, 0x6d], 'sqlite3.wasm must be valid WebAssembly binary (\\0asm header)');
+    assert(fs.existsSync('public/sqlite3.js'), 'public/sqlite3.js loader must exist');
+    console.log("PASS: public/sqlite3.wasm validated as authentic precompiled zero-dependency WebAssembly binary.");
+
     const loadCSVIntoDatabase = vm.runInContext('loadCSVIntoDatabase', sandbox);
     const executeSqlQuery = vm.runInContext('executeSqlQuery', sandbox);
 

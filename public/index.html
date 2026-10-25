@@ -286,15 +286,8 @@
         <span>Port :8080</span>
     </footer>
 
-    <!-- Official SQLite-WASM ES Module Loader -->
-    <script type="module">
-        try {
-            const { default: initModule } = await import('https://cdn.jsdelivr.net/npm/@sqlite.org/sqlite-wasm/sqlite-wasm/jswasm/sqlite3-bundler-friendly.mjs');
-            window.sqlite3InitModule = initModule;
-        } catch (e) {
-            console.warn('Pre-loading SQLite-WASM module from CDN:', e);
-        }
-    </script>
+    <!-- Pre-compiled Zero-Dependency SQLite-WASM Drop-In File -->
+    <script src="sqlite3.js"></script>
 
     <!-- Vanilla JS Terminal Emulator -->
     <script src="app.js"></script>

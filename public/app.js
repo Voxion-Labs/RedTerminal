@@ -427,30 +427,37 @@ class FallbackSqliteDb {
 }
 
 /**
- * Initializes SQLite-WASM from official CDN or falls back to in-memory SQL engine.
+ * Initializes SQLite-WASM from local drop-in sqlite3.wasm / sqlite3.js or falls back to in-memory SQL engine.
  */
 async function initSqliteWasm() {
     if (sqlite3Instance) return sqlite3Instance;
-    if (window.sqlite3) {
+    if (typeof window !== 'undefined' && window.sqlite3) {
         sqlite3Instance = window.sqlite3;
         return sqlite3Instance;
     }
 
     try {
-        termPrint('Initializing SQLite-WASM subsystem...', 'dim');
-        let initFn = window.sqlite3InitModule;
-        if (!initFn) {
-            const cdnUrls = [
-                'https://cdn.jsdelivr.net/npm/@sqlite.org/sqlite-wasm/sqlite-wasm/jswasm/sqlite3-bundler-friendly.mjs',
-                'https://unpkg.com/@sqlite.org/sqlite-wasm/sqlite-wasm/jswasm/sqlite3-bundler-friendly.mjs'
-            ];
-            for (const url of cdnUrls) {
-                try {
-                    const mod = await import(url);
-                    initFn = mod.default || mod;
-                    if (initFn) break;
-                } catch (e) {
-                    console.warn(`Failed loading from ${url}:`, e);
+        termPrint('Initializing SQLite-WASM in-memory subsystem...', 'dim');
+        let initFn = (typeof window !== 'undefined' ? window.sqlite3InitModule : null) ||
+                     (typeof globalThis !== 'undefined' ? globalThis.sqlite3InitModule : null);
+
+        if (!initFn && typeof importScripts === 'undefined') {
+            try {
+                const mod = await import('./sqlite3.js');
+                initFn = mod.default || mod.sqlite3InitModule || mod;
+            } catch (_) {
+                const cdnUrls = [
+                    'https://cdn.jsdelivr.net/npm/@sqlite.org/sqlite-wasm/sqlite-wasm/jswasm/sqlite3-bundler-friendly.mjs',
+                    'https://unpkg.com/@sqlite.org/sqlite-wasm/sqlite-wasm/jswasm/sqlite3-bundler-friendly.mjs'
+                ];
+                for (const url of cdnUrls) {
+                    try {
+                        const mod = await import(url);
+                        initFn = mod.default || mod;
+                        if (initFn) break;
+                    } catch (e) {
+                        console.warn(`Failed loading from ${url}:`, e);
+                    }
                 }
             }
         }
@@ -460,8 +467,10 @@ async function initSqliteWasm() {
                 print: (msg) => console.log('[sqlite3]', msg),
                 printErr: (msg) => console.error('[sqlite3]', msg)
             });
-            window.sqlite3 = sqlite3Instance;
-            termPrint(`SQLite-WASM core ready (v${sqlite3Instance.version ? sqlite3Instance.version.libVersion : '3.x'}).`, 'success');
+            if (typeof window !== 'undefined') {
+                window.sqlite3 = sqlite3Instance;
+            }
+            termPrint(`SQLite-WASM core ready (v${sqlite3Instance.version ? sqlite3Instance.version.libVersion : '3.x'}). In-memory transient database enabled.`, 'success');
             return sqlite3Instance;
         }
     } catch (err) {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"net/url"
 	"time"
@@ -76,6 +77,7 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	_ = mime.AddExtensionType(".wasm", "application/wasm")
 	mux := http.NewServeMux()
 
 	// /ping endpoint returning 'pong'
