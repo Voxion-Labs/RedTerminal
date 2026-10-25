@@ -18,7 +18,7 @@ This document defines the complete command surface for RedTerminal across its na
 | `extract-tables` | Extension / Web | Parses all `<table>` elements into CSV and triggers automated download. | None |
 | `fetch <url> \| filter <kw>` | Web | Scrapes URL via Go CORS proxy and extracts matching lines via WASM log filter. | `<url>` and `<keyword>` |
 | `query` | Web | Executes SQL against an in-memory CSV temporary table via SQLite-WASM. | `<sql_query>` (string) |
-| `upload` | Web | Ingests CSV to in-memory SQLite table or binary to WASM memory via `_malloc`. | None (triggers file picker dialog) |
+| `upload` | Web | Streams massive files in 5MB slices using `File.slice()` to pure C11 `process_chunk`, keeping RAM strictly flat. | None (triggers file picker dialog) |
 | `filter` | Web | Performs pointer-based substring extraction on log lines via WASM. | `<keyword>` (string) |
 | `b64` | Web | Encodes or decodes text via RFC 4648 Base64 WASM engine. | `[-e\|-d] <text>` (flag and string) |
 | `hash` | Web | Generates a 64-character lowercase SHA-256 hex digest via WASM. | `<text>` (string) |
@@ -143,15 +143,15 @@ This document defines the complete command surface for RedTerminal across its na
 
 #### `upload`
 - **Syntax:** `upload`
-- **Description:** Demonstrates full-duplex WASM memory handoff via hidden DOM file picker.
+- **Description:** Streams arbitrary massive files (gigabytes) into WASM linear memory using bounded 5MB slices.
 - **Execution Flow:**
-  1. Opens local file picker input.
-  2. Reads selected file into `ArrayBuffer`.
-  3. Allocates memory inside the WebAssembly heap using `Module._malloc(byte_size)`.
-  4. Copies byte stream into `Module.HEAPU8`.
-  5. Executes C function `process_data(uint8_t *data, int size)`.
-  6. Reads returned memory address from `Module.HEAPU8`, wraps into a `Blob`, and triggers automated browser download.
-  7. Deallocates heap space via `Module._free`.
+  1. Opens local file picker input via hidden DOM element.
+  2. Slices input file into strictly 5MB segments using the browser `File.slice(offset, nextOffset)` API.
+  3. Allocates memory in WASM linear heap for only the active slice via `Module._malloc(sliceSize)`.
+  4. Copies slice data into `Module.HEAPU8`.
+  5. Executes pure C11 function `process_chunk(char *buffer, size_t size)` using pointer arithmetic and 32-bit FNV-1a checksum calculation.
+  6. Immediately deallocates the chunk memory via `Module._free(chunkPtr)` in a `finally` block, ensuring flat memory consumption (<= 5MB) regardless of file size.
+  7. Renders real-time progress indicators (`[=====>  ] % | Chunk X/Y | RAM: flat 5MB`) to the terminal interface.
 
 #### `filter <keyword>`
 - **Syntax:** `filter <keyword>`

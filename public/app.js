@@ -6,29 +6,37 @@
 // ==========================================
 // Emscripten Module Initialization Block
 // ==========================================
-var Module = {
-    preRun: [],
-    postRun: [],
-    print: function(text) {
+var Module = (typeof Module !== 'undefined' && Module) ? Module : {};
+Module.preRun = Module.preRun || [];
+Module.postRun = Module.postRun || [];
+if (!Module.print) {
+    Module.print = function(text) {
         if (arguments.length > 1) {
             text = Array.prototype.slice.call(arguments).join(' ');
         }
         termPrint(text);
-    },
-    printErr: function(text) {
+    };
+}
+if (!Module.printErr) {
+    Module.printErr = function(text) {
         if (arguments.length > 1) {
             text = Array.prototype.slice.call(arguments).join(' ');
         }
         termPrint(text, 'error');
-    },
-    onRuntimeInitialized: function() {
+    };
+}
+if (!Module.onRuntimeInitialized) {
+    Module.onRuntimeInitialized = function() {
         termPrint('WASM core runtime initialized.', 'system');
-    }
-};
+    };
+}
 
 // Fallback allocator in case Emscripten runtime is still loading or running standalone
 let mockMemoryBuffer = null;
 let mockHeapOffset = 4096;
+let mockStreamTotalBytes = 0;
+let mockStreamChunksCount = 0;
+let mockStreamChecksum = 2166136261;
 function ensureWasmMemory() {
     if (!Module.HEAPU8) {
         if (!mockMemoryBuffer) {
@@ -53,6 +61,41 @@ function ensureWasmMemory() {
         Module._process_data = function(ptr) {
             // Mock implementation: returns input pointer
             return ptr;
+        };
+    }
+    if (typeof Module._stream_reset !== 'function') {
+        Module._stream_reset = function() {
+            mockStreamTotalBytes = 0;
+            mockStreamChunksCount = 0;
+            mockStreamChecksum = 2166136261;
+        };
+    }
+    if (typeof Module._process_chunk !== 'function') {
+        Module._process_chunk = function(ptr, size) {
+            mockStreamChunksCount++;
+            mockStreamTotalBytes += size;
+            if (Module.HEAPU8 && ptr) {
+                for (let i = 0; i < size; i++) {
+                    mockStreamChecksum ^= Module.HEAPU8[ptr + i];
+                    mockStreamChecksum = Math.imul(mockStreamChecksum, 16777619);
+                }
+            }
+            return 0;
+        };
+    }
+    if (typeof Module._stream_get_total_bytes !== 'function') {
+        Module._stream_get_total_bytes = function() {
+            return mockStreamTotalBytes;
+        };
+    }
+    if (typeof Module._stream_get_chunks_count !== 'function') {
+        Module._stream_get_chunks_count = function() {
+            return mockStreamChunksCount;
+        };
+    }
+    if (typeof Module._stream_get_checksum !== 'function') {
+        Module._stream_get_checksum = function() {
+            return mockStreamChecksum >>> 0;
         };
     }
     if (typeof Module._filter_logs !== 'function') {
@@ -971,6 +1014,150 @@ function runCHtmlParserFallback(rawHtml, targetTag) {
 }
 
 /**
+ * Formats byte counts into human-readable strings (e.g. 5.00 MB).
+ *
+ * @param {number} bytes - Byte count
+ * @returns {string} Formatted size string
+ */
+function formatBytes(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
+}
+
+/**
+ * Streams a large file into WASM linear memory in strictly 5MB slices using the File.slice() API.
+ * Calls Module._process_chunk on each slice and immediately frees the chunk pointer via Module._free()
+ * to guarantee a flat, bounded RAM footprint (<= 5MB).
+ *
+ * @param {File|Blob} file - The File or Blob object to read in slices
+ * @param {Function} [onProgress] - Optional callback receiving progress status
+ * @returns {Promise<{ totalBytes: number, totalChunks: number, elapsedMs: number, checksum: number }>}
+ */
+async function streamFileInChunks(file, onProgress) {
+    if (!file) {
+        throw new Error('No file provided for streaming.');
+    }
+
+    ensureWasmMemory();
+
+    // Reset C WASM stream metrics
+    if (typeof Module._stream_reset === 'function') {
+        Module._stream_reset();
+    } else if (typeof Module.ccall === 'function') {
+        try { Module.ccall('stream_reset', null, [], []); } catch (e) {}
+    }
+
+    const CHUNK_SIZE = 5 * 1024 * 1024; // Strictly 5MB slices
+    const totalSize = file.size || 0;
+    const totalChunks = Math.max(1, Math.ceil(totalSize / CHUNK_SIZE));
+    let offset = 0;
+    let chunkIndex = 0;
+    let bytesProcessed = 0;
+    const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+
+    termPrint(`Starting WASM chunked stream: ${file.name || 'file'} (${formatBytes(totalSize)}) in 5MB slices...`, 'info');
+
+    if (totalSize === 0) {
+        termPrint('Empty file (0 bytes). No chunks to process.', 'dim');
+        return { totalBytes: 0, totalChunks: 0, elapsedMs: 0, checksum: 0 };
+    }
+
+    while (offset < totalSize) {
+        const nextOffset = Math.min(offset + CHUNK_SIZE, totalSize);
+        const sliceSize = nextOffset - offset;
+        const slice = file.slice(offset, nextOffset);
+        chunkIndex++;
+
+        // Read slice as ArrayBuffer without buffering the rest of the file
+        let arrayBuffer;
+        if (typeof slice.arrayBuffer === 'function') {
+            arrayBuffer = await slice.arrayBuffer();
+        } else {
+            arrayBuffer = await new Promise((resolve, reject) => {
+                const fr = new FileReader();
+                fr.onload = () => resolve(fr.result);
+                fr.onerror = () => reject(fr.error || new Error('Failed to read slice'));
+                fr.readAsArrayBuffer(slice);
+            });
+        }
+
+        const uint8Array = new Uint8Array(arrayBuffer);
+        let chunkPtr = 0;
+
+        try {
+            // Allocate 5MB chunk in WASM linear memory
+            chunkPtr = Module._malloc(sliceSize);
+            if (!chunkPtr) {
+                throw new Error(`Failed to allocate ${sliceSize} bytes in WASM heap for chunk ${chunkIndex}`);
+            }
+
+            // Copy slice bytes into WASM heap
+            Module.HEAPU8.set(uint8Array, chunkPtr);
+
+            // Pass chunk to pure C11 process_chunk
+            let res = 0;
+            if (typeof Module._process_chunk === 'function') {
+                res = Module._process_chunk(chunkPtr, sliceSize);
+            } else if (typeof Module.ccall === 'function') {
+                res = Module.ccall('process_chunk', 'number', ['number', 'number'], [chunkPtr, sliceSize]);
+            }
+
+            if (res !== 0) {
+                termPrint(`WARN: process_chunk returned non-zero status (${res}) on chunk ${chunkIndex}`, 'warn');
+            }
+
+            bytesProcessed += sliceSize;
+            const percent = Math.min(100, Math.round((bytesProcessed / totalSize) * 100));
+
+            // Render terminal progress bar
+            const barWidth = 24;
+            const filled = Math.round((percent / 100) * barWidth);
+            const bar = '='.repeat(filled) + (filled < barWidth ? '>' : '') + ' '.repeat(Math.max(0, barWidth - filled - (filled < barWidth ? 1 : 0)));
+            const mbProcessed = (bytesProcessed / (1024 * 1024)).toFixed(2);
+            const mbTotal = (totalSize / (1024 * 1024)).toFixed(2);
+
+            const progressMsg = `[${bar}] ${percent}% | Chunk ${chunkIndex}/${totalChunks} (${mbProcessed}MB / ${mbTotal}MB) | RAM: flat 5MB`;
+            termPrint(progressMsg, 'highlight');
+
+            if (typeof onProgress === 'function') {
+                onProgress({ chunk: chunkIndex, totalChunks, bytesProcessed, totalBytes: totalSize, percent });
+            }
+
+            // Yield control to UI thread to ensure real-time terminal rendering
+            await new Promise(r => setTimeout(r, 0));
+        } finally {
+            // Strictly call Module._free() immediately after each chunk to keep RAM flat
+            if (chunkPtr && typeof Module._free === 'function') {
+                Module._free(chunkPtr);
+                chunkPtr = 0;
+            }
+        }
+
+        offset = nextOffset;
+    }
+
+    const endTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const elapsedMs = Math.round(endTime - startTime);
+
+    let checksum = 0;
+    if (typeof Module._stream_get_checksum === 'function') {
+        checksum = Module._stream_get_checksum() >>> 0;
+    }
+
+    termPrint(`Stream complete: ${formatBytes(bytesProcessed)} processed across ${chunkIndex} chunks in ${elapsedMs}ms. Checksum: 0x${checksum.toString(16).toUpperCase()}. RAM usage: flat <= 5MB.`, 'success');
+
+    return {
+        totalBytes: bytesProcessed,
+        totalChunks: chunkIndex,
+        elapsedMs,
+        checksum
+    };
+}
+
+/**
  * Placeholder for executing commands via WASM / Emscripten.
  * Dispatches to Module.ccall if available, or processes placeholder commands.
  *
@@ -1010,7 +1197,7 @@ async function executeCommand(cmd) {
             termPrint('  nuke-ads        - Scan and extract ad/tracking script blocks via C WASM engine');
             termPrint('  fetch <url> | filter <kw> - Fetch URL via Go proxy & filter lines via WASM');
             termPrint('  query <sql>     - Execute SQL on uploaded CSV via in-memory SQLite-WASM');
-            termPrint('  upload          - Upload CSV to in-memory SQLite or binary to WASM memory');
+            termPrint('  upload          - Upload large files in 5MB slices to WASM memory chunker');
             termPrint('  filter <word>   - Filter uploaded log lines via WASM (preview + download)');
             termPrint('  b64 [-e|-d] <s> - Base64 encode/decode string via WASM');
             termPrint('  hash <text>     - Compute SHA-256 hash digest via WASM');
@@ -1090,84 +1277,32 @@ async function executeCommand(cmd) {
         }
 
         case 'upload':
-            termPrint('Opening file picker...', 'dim');
-            openHiddenFilePicker((file) => {
-                termPrint(`Selected: ${file.name} (${file.size} bytes)`, 'highlight');
+            termPrint('Opening file picker for WASM chunked upload...', 'dim');
+            openHiddenFilePicker(async (file) => {
+                termPrint(`Selected: ${file.name} (${formatBytes(file.size)})`, 'highlight');
+
                 const isCsv = file.name.toLowerCase().endsWith('.csv') || file.type === 'text/csv';
-                if (isCsv) {
-                    const reader = new FileReader();
-                    reader.onload = async function(e) {
-                        try {
-                            await loadCSVIntoDatabase(e.target.result, file.name);
-                        } catch (err) {
-                            termPrint(`ERR: Failed to process CSV: ${err.message}`, 'error');
-                        }
-                    };
-                    reader.onerror = function() {
-                        termPrint('ERR: Failed to read selected CSV file.', 'error');
-                    };
-                    reader.readAsText(file);
-                    return;
+                // If small CSV (< 5MB), load into SQLite table as well for immediate querying
+                if (isCsv && file.size < 5 * 1024 * 1024) {
+                    try {
+                        const text = typeof file.text === 'function' ? await file.text() : await new Promise((res, rej) => {
+                            const r = new FileReader();
+                            r.onload = () => res(r.result);
+                            r.onerror = rej;
+                            r.readAsText(file);
+                        });
+                        await loadCSVIntoDatabase(text, file.name);
+                    } catch (e) {
+                        console.warn('CSV auto-registration skipped:', e);
+                    }
                 }
 
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    let inPtr = 0;
-                    let outPtr = 0;
-                    try {
-                        const arrayBuffer = e.target.result;
-                        const uint8Array = new Uint8Array(arrayBuffer);
-                        const size = uint8Array.length;
-
-                        ensureWasmMemory();
-
-                        // 1. Allocate WASM memory using Emscripten _malloc
-                        inPtr = Module._malloc(size);
-                        if (!inPtr) {
-                            termPrint('ERR: Failed to allocate WASM memory via _malloc.', 'error');
-                            return;
-                        }
-
-                        // 2. Pass data to WASM memory using Emscripten HEAPU8
-                        Module.HEAPU8.set(uint8Array, inPtr);
-                        termPrint(`Transferred ${size} bytes to WASM HEAPU8 [inPtr: 0x${inPtr.toString(16)}].`, 'dim');
-
-                        // 3. Call process_data (C function via Emscripten)
-                        outPtr = inPtr;
-                        if (typeof Module._process_data === 'function') {
-                            outPtr = Module._process_data(inPtr, size);
-                        } else if (typeof Module.ccall === 'function') {
-                            try {
-                                outPtr = Module.ccall('process_data', 'number', ['number', 'number'], [inPtr, size]);
-                            } catch (err) {
-                                outPtr = inPtr;
-                            }
-                        }
-
-                        termPrint(`WASM process_data returned outPtr: 0x${outPtr.toString(16)}.`, 'success');
-
-                        // 4. Read returned WASM output pointer, convert to Blob, and trigger download
-                        const downloadName = file.name.startsWith('processed_') ? file.name : `processed_${file.name}`;
-                        downloadWasmOutput(outPtr, size, downloadName, file.type || 'application/octet-stream');
-                        termPrint(`Automatic download initiated for '${downloadName}'.`, 'success');
-                    } catch (err) {
-                        termPrint(`ERR: Upload processing failed: ${err.message}`, 'error');
-                    } finally {
-                        // 5. Clean up allocated WASM memory immediately to prevent heap leaks
-                        if (typeof Module._free === 'function') {
-                            if (inPtr) {
-                                Module._free(inPtr);
-                            }
-                            if (outPtr && outPtr !== inPtr) {
-                                Module._free(outPtr);
-                            }
-                        }
-                    }
-                };
-                reader.onerror = function() {
-                    termPrint('ERR: Failed to read selected file.', 'error');
-                };
-                reader.readAsArrayBuffer(file);
+                // Stream file through WASM in 5MB slices using File.slice()
+                try {
+                    await streamFileInChunks(file);
+                } catch (err) {
+                    termPrint(`ERR: Upload chunked stream failed: ${err.message}`, 'error');
+                }
             });
             break;
 
