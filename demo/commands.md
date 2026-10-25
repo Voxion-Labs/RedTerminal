@@ -14,6 +14,8 @@ This document defines the complete command surface for RedTerminal across its na
 | `resume` | Native | Restores suspended process to active execution. | `<pid>` (integer) |
 | `ps` | Native / Web | Dumps active Process Control Block records. | None |
 | `logs` | Native | Streams raw events from `redterm.log`. | None |
+| `nuke-ads` | Extension / Web | Queries and purges common ad/banner DOM selectors from host page. | None |
+| `extract-tables` | Extension / Web | Parses all `<table>` elements into CSV and triggers automated download. | None |
 | `fetch <url> \| filter <kw>` | Web | Scrapes URL via Go CORS proxy and extracts matching lines via WASM log filter. | `<url>` and `<keyword>` |
 | `query` | Web | Executes SQL against an in-memory CSV temporary table via SQLite-WASM. | `<sql_query>` (string) |
 | `upload` | Web | Ingests CSV to in-memory SQLite table or binary to WASM memory via `_malloc`. | None (triggers file picker dialog) |
@@ -92,6 +94,22 @@ This document defines the complete command surface for RedTerminal across its na
 ---
 
 ### WebAssembly Engine Commands (Web Interface)
+
+#### `nuke-ads`
+- **Syntax:** `nuke-ads`
+- **Description:** Scans the active web page host DOM and purges all matched advertisement banners, tracking containers, and sponsored frames.
+- **Semantics:**
+  - Matches 25+ standard ad selectors (`[id*="google_ads"]`, `[class*="ad-container"]`, `ins.adsbygoogle`, etc.).
+  - Bypasses the isolated terminal overlay Shadow DOM.
+  - Outputs total count of purged elements to terminal.
+
+#### `extract-tables`
+- **Syntax:** `extract-tables`
+- **Description:** Extracts all `<table>` elements on the active page, converts rows and cells into RFC 4180 CSV format, and triggers browser file download.
+- **Semantics:**
+  - Iterates over all `<tr>`, `<th>`, and `<td>` elements in the host page.
+  - Generates labeled CSV sections for multi-table documents.
+  - Automatically triggers client-side file download for `extracted_tables_<page>.csv`.
 
 #### `query <sql>`
 - **Syntax:** `query <sql>`

@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "RedTerminal - Web Mutator Extension",
+  "version": "1.0.0",
+  "description": "Cross-browser WebAssembly terminal emulator and DOM mutator overlay for Chromium and Firefox.",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "action": {
+    "default_title": "Toggle RedTerminal Overlay",
+    "default_icon": {
+      "16": "public/logo.png",
+      "32": "public/logo.png",
+      "48": "public/logo.png",
+      "128": "public/logo.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "scripts": ["background.js"]
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "public/*"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "commands": {
+    "toggle-terminal": {
+      "suggested_key": {
+        "default": "Alt+Shift+T",
+        "mac": "Alt+Shift+T"
+      },
+      "description": "Toggle RedTerminal overlay on the current web page"
+    }
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "redterminal@voxionlabs.io",
+      "strict_min_version": "109.0"
+    }
+  }
+}

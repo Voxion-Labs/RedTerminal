@@ -844,6 +844,8 @@ async function executeCommand(cmd) {
         case 'help':
             termPrint('REDTERM Commands:', 'highlight');
             termPrint('  help            - Display available commands');
+            termPrint('  nuke-ads        - Purge common ad/banner DOM selectors from page');
+            termPrint('  extract-tables  - Parse all <table> elements into CSV & download');
             termPrint('  fetch <url> | filter <kw> - Fetch URL via Go proxy & filter lines via WASM');
             termPrint('  query <sql>     - Execute SQL on uploaded CSV via in-memory SQLite-WASM');
             termPrint('  upload          - Upload CSV to in-memory SQLite or binary to WASM memory');
@@ -857,6 +859,85 @@ async function executeCommand(cmd) {
             termPrint('  ps              - Display mock process table');
             termPrint('  info            - Show architecture and runtime info');
             break;
+
+        case 'nuke-ads': {
+            const adSelectors = [
+                '[id*="google_ads"]', '[id*="ad-banner"]', '[id*="advertisement"]',
+                '[id*="ad-container"]', '[id*="ad_wrapper"]', '[id*="ad-slot"]',
+                '[id*="taboola"]', '[id*="outbrain"]',
+                '[class*="ad-container"]', '[class*="ad-banner"]', '[class*="ad-box"]',
+                '[class*="ad-slot"]', '[class*="ad-wrapper"]', '[class*="adsbygoogle"]',
+                '[class*="sponsored-post"]', '[class*="taboola"]', '[class*="outbrain"]',
+                'ins.adsbygoogle', 'div[data-ad-client]', 'div[data-ad-slot]',
+                'aside[class*="ad-"]', 'iframe[src*="doubleclick.net"]',
+                'iframe[src*="googlesyndication.com"]', 'iframe[src*="adnxs.com"]',
+                '[aria-label="advertisement" i]', '[aria-label="sponsored" i]'
+            ];
+            let removedCount = 0;
+            try {
+                const matches = document.querySelectorAll(adSelectors.join(', '));
+                matches.forEach(el => {
+                    if (el.closest('#terminal-container') || el.closest('#redterm-extension-host')) return;
+                    el.remove();
+                    removedCount++;
+                });
+            } catch (e) {
+                termPrint(`ERR: ${e.message}`, 'error');
+                break;
+            }
+            if (removedCount > 0) {
+                termPrint(`[nuke-ads] Purged ${removedCount} ad/banner element(s) from DOM.`, 'success');
+            } else {
+                termPrint('[nuke-ads] No matching ad/banner elements detected.', 'dim');
+            }
+            break;
+        }
+
+        case 'extract-tables': {
+            const tables = document.querySelectorAll('table');
+            const valid = Array.from(tables).filter(t => !t.closest('#terminal-container') && !t.closest('#redterm-extension-host'));
+            if (valid.length === 0) {
+                termPrint('[extract-tables] No <table> elements found on this page.', 'warning');
+                break;
+            }
+            const sections = [];
+            let rowCount = 0;
+            valid.forEach((tbl, idx) => {
+                const lines = [`"=== Table ${idx + 1} ==="`];
+                tbl.querySelectorAll('tr').forEach(tr => {
+                    const cells = tr.querySelectorAll('th, td');
+                    if (cells.length === 0) return;
+                    const row = Array.from(cells).map(c => {
+                        let text = (c.innerText || c.textContent || '').trim().replace(/\s+/g, ' ');
+                        if (text.includes('"') || text.includes(',') || text.includes('\n')) {
+                            text = `"${text.replace(/"/g, '""')}"`;
+                        }
+                        return text;
+                    });
+                    lines.push(row.join(','));
+                    rowCount++;
+                });
+                if (lines.length > 1) sections.push(lines.join('\r\n'));
+            });
+            if (rowCount === 0) {
+                termPrint('[extract-tables] No rows found in tables.', 'warning');
+                break;
+            }
+            const fullCsv = sections.join('\r\n\r\n');
+            const blob = new Blob([fullCsv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'extracted_tables.csv';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 150);
+            termPrint(`[extract-tables] Extracted ${valid.length} table(s) (${rowCount} total rows). Triggered download.`, 'success');
+            break;
+        }
 
         case 'fetch':
             await handleFetchFilterCommand(trimmed);
