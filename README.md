@@ -5,187 +5,224 @@
 <p align="center">
   A high-performance C-dominant security analysis, data crunching, and WebAssembly execution workstation operating directly in the browser and as a toggleable Manifest V3 overlay extension.
 </p>
+
 <p align="center">
-  <a href="https://voxion-labs.github.io/RedTerminal/">Live Terminal</a>
-  |
-  <a href="https://github.com/Voxion-Labs/RedTerminal/issues">Telemetry and Issues</a>
+  <a href="https://redterminal.onrender.com"><strong>Live Web Terminal (Render)</strong></a>
+  &bull;
+  <a href="https://voxion-labs.github.io/RedTerminal/"><strong>GitHub Pages Deployment</strong></a>
+  &bull;
+  <a href="https://github.com/Voxion-Labs/RedTerminal/issues"><strong>Telemetry & Issues</strong></a>
 </p>
 
 ---
 
 ## Overview
 
-RedTerminal is a client-isolated systems workstation and execution environment. Built around a **strictly C-dominant execution architecture**, JavaScript is restricted to a "dumb pipe" for I/O and display, while all intensive compute, raw memory transformations, and parsing occur inside pure C11 compiled to WebAssembly (WASM).
+RedTerminal is a dual-surface systems and security environment engineered with a **strictly C-dominant architecture**. Rather than running heavy business logic in JavaScript, RedTerminal treats JavaScript exclusively as a "dumb pipe" for raw I/O and display rendering. All computation, pointer-based token parsing, cryptographic hashing, and tabular transformations execute inside pure C11 compiled to WebAssembly (WASM).
 
-### Core Pillars
+RedTerminal deploys both as a standalone web application served by a lightweight Go backend and as an injectable Manifest V3 browser extension overlay for Chromium and Firefox.
 
-1. **Zero-Trust Secret & Vulnerability Scanner (`scan`):** Pure C pointer arithmetic engine utilizing a sliding window and Shannon entropy analysis ($H = -\sum p \log_2 p$) to detect exposed AWS IAM keys, Stripe secret keys, GitHub tokens, Slack credentials, private keys, and high-entropy secrets in text and live DOM trees.
-2. **5MB WASM Memory Chunking (`upload`):** Streams arbitrary gigabyte-scale datasets using the browser's `File.slice()` API in bounded 5MB segments, processing each chunk via `process_chunk` and immediately deallocating via `Module._free()` to guarantee a flat $\le 5\text{MB}$ RAM footprint.
-3. **In-Memory CSV-to-SQL Cruncher (`query <sql>`):** Client-side relational SQL execution powered by an isolated, precompiled `sqlite3.wasm` drop-in. Requires zero npm packages, zero host SQL database servers, and zero disk writes. The entire database resides in WebAssembly `:memory:` and vanishes completely when the tab closes.
-4. **C-Powered DOM Extraction (`extract-tables`, `nuke-ads`, `extract <tag>`):** Parses raw HTML strings directly in C memory using pointer arithmetic, extracting tables to RFC 4180 CSV strings and purging ad/tracking scripts with zero JS DOM-query overhead.
-5. **CORS Scraping Proxy & Piped Processing (`fetch <url> | filter <kw>` / `fetch <url> | scan`):** A lightweight Go backend streams raw external web pages directly to WASM memory for instant keyword extraction or credential audits.
-6. **Native POSIX Subsystem:** A compiled C11 multi-threaded CLI (`redterm`) providing process scheduling (`pthreads`), process control block (PCB) tracking, and mutex-locked asynchronous logging.
+```mermaid
+flowchart TD
+    subgraph Client ["Client Presentation & Browser Surface"]
+        direction TB
+        Browser["Web Browser (public/index.html)"]
+        ExtOverlay["Manifest V3 Extension Overlay (content.js)"]
+        TermUI["Vanilla JS Terminal UI (public/app.js)"]
+        Browser --> TermUI
+        ExtOverlay --> TermUI
+    end
 
----
+    subgraph GoBackend ["Go Backend Server (main.go :8080 / Render)"]
+        direction TB
+        GoStatic["Static File Server (public/)"]
+        GoPing["/ping Healthcheck"]
+        GoProxy["/proxy?url= CORS Bypass Scraper"]
+    end
 
-## Technical Specifications
+    subgraph WasmLayer ["WebAssembly Execution Core"]
+        direction TB
+        Scanner["Zero-Trust Scanner (scanner.c)<br/>Sliding Window + Shannon Entropy"]
+        StreamChunk["Stream Processor (stream.c)<br/>5MB Bounded Chunking + FNV-1a"]
+        HTMLParser["DOM Parser (html_parser.c)<br/>Pointer Tag Extraction & Table CSV"]
+        Crypto["Crypto Engine (crypto.c)<br/>SHA-256 & RFC 4648 Base64"]
+        LogFilter["Log Filter (filter.c)<br/>Newline-Isolated Pointer Scan"]
+        Validator["JSON Validator (validator.c)<br/>Single-Pass AST-Free Parser"]
+        SqliteCore["Isolated SQLite-WASM (sqlite3.wasm)<br/>Transient :memory: Database"]
+    end
 
-### Architecture Matrix
-
-| Subsystem | Source Path | Target Surface | Key Primitives | Memory / Execution Model |
-| :--- | :--- | :--- | :--- | :--- |
-| **Zero-Trust Scanner** | `src/scanner.c` | WASM / Native | Raw pointer increments, Shannon entropy | Bounded lookback sliding window; character-frequency entropy; zero regex libraries. |
-| **Stream Chunk Processor** | `src/stream.c` | WASM / Native | Pointer traversal, FNV-1a hash | Constant memory overhead; processes 5MB slices; immediate deallocation via `_free()`. |
-| **HTML Parser & Extractor** | `src/html_parser.c` | WASM / Native | Pointer bounds, state machine | Extracts tags and formats CSV directly in linear memory; zero DOM traversal. |
-| **CSV-to-SQL Cruncher** | `public/sqlite3.wasm` | Browser WASM | SQLite v3.x engine, `:memory:` | Isolated WASM heap; transient in-memory database; vanishes upon tab close. |
-| **Log Filter** | `src/filter.c` | WASM / Native | Raw pointer increments, `\n` boundaries | Single-pass $O(N)$ newline-isolated line extraction. |
-| **Crypto Engine** | `src/crypto.c` | WASM / Native | Bitwise rotation, arrays | 32-bit word transforms; RFC 4648 Base64 & FIPS 180-4 SHA-256; zero external dependencies. |
-| **JSON Validator** | `src/validator.c` | WASM / Native | Stack-based bracket match | Single-pass $O(N)$ syntax parser; returns line-level syntax error offsets without AST. |
-| **Process Manager** | `src/process.c` | Native | `pcb_t`, `process_table` | Static table (256 PCBs), mutex-synchronized (`pt_mutex`). |
-| **Scheduler** | `src/scheduler.c` | Native | `pthread_create`, `sleep` | Dedicated POSIX worker thread, increments `cpu_time` of `RUNNING` tasks. |
-| **Logger** | `src/logger.c` | Native | `vfprintf`, `pthread_mutex` | File-backed stream (`redterm.log`) protected by `log_mutex`. |
-| **Web & Proxy Server** | `main.go` | Host | `net/http`, standard library | Standard library static file server (`:8080`), `/ping` health endpoint, and `/proxy?url=` CORS bypass. |
-| **Terminal Client** | `public/app.js` | Browser / Extension | Native DOM, `File.slice()` | Dumb-pipe I/O layer, Emscripten linear memory bridge (`HEAPU8`), ANSI rendering. |
-
----
-
-## Execution Surfaces
-
-### 1. WebAssembly Client & Extension Overlay
-
-RedTerminal deploys as both a standalone web application and a Manifest V3 cross-browser extension overlay (Chromium and Firefox):
-
-```text
-Host Web Page / Browser Tab
-  │
-  ├── [content.js] ────────── Passes document.documentElement.outerHTML ──────┐
-  │                                                                           │
-  ▼                                                                           ▼
-RedTerminal UI (Isolated Shadow DOM / IFrame Container)                 WASM Linear Heap
-  │                                                                           │
-  ├── [scan] ───────────────── Run sliding window & entropy analysis ─────────┤
-  ├── [upload] ─────────────── Stream 5MB slices via File.slice() ────────────┤
-  ├── [query <sql>] ────────── Transient in-memory SQLite table (:memory:) ───┤
-  ├── [nuke-ads] ───────────── Parse & isolate <script> ad tags in C ─────────┤
-  └── [extract-tables] ─────── Convert <table> elements to CSV string in C ───┘
-```
-
-### 2. Native POSIX CLI
-
-The native application compiles with any standard C11 compiler and requires only POSIX thread support. It executes an interactive REPL while allocating CPU runtime in a background scheduler thread.
-
-```text
-[Main Thread]   fgets() ──> Command Parser ──> Mutex Lock ──> Update PCB ──> Mutex Unlock
-                                                                    ^
-[Worker Thread] Sleep(1s) ──────────────────────────────────────────┴ Poll & Increment cpu_time
+    TermUI -->|"Pointer Memory Handoff (HEAPU8)"| Scanner
+    TermUI -->|"Pointer Memory Handoff (HEAPU8)"| StreamChunk
+    TermUI -->|"Pointer Memory Handoff (HEAPU8)"| HTMLParser
+    TermUI -->|"Pointer Memory Handoff (HEAPU8)"| Crypto
+    TermUI -->|"Pointer Memory Handoff (HEAPU8)"| LogFilter
+    TermUI -->|"Pointer Memory Handoff (HEAPU8)"| Validator
+    TermUI -->|"Client-Side SQL Query"| SqliteCore
+    TermUI -->|"Proxy Scraping Request"| GoProxy
+    TermUI -->|"HTMX Healthcheck (30s)"| GoPing
+    GoStatic -->|"Serves Static WASM & UI"| Browser
 ```
 
 ---
 
-## WebAssembly Exported Function Interface
+## Problems RedTerminal Solves
 
-The following C functions are exported through the Emscripten runtime:
+### 1. Client-Side Credential Exposure & Leaked Secrets
+Modern single-page applications and web APIs frequently leak sensitive API tokens, cloud keys, and private credentials directly into DOM trees, script bundles, or configuration payloads. Traditional security scanners require uploading proprietary source code or logs to third-party SaaS servers, introducing compliance violations and privacy risks. RedTerminal performs **zero-trust secret scanning 100% client-side** using pure C pointer arithmetic and Shannon entropy calculation without transmitting a single byte to external servers.
 
-| Exported C Symbol | Parameters | Return Type | Semantics |
-| :--- | :--- | :--- | :--- |
-| `scan_secrets` | `char *text` | `char*` | Sliding window zero-trust scanner; detects credential prefixes & high entropy; returns report. |
-| `process_chunk` | `char *buffer, size_t size` | `int` | Ingests a 5MB memory slice using pointer arithmetic, updating running metrics & checksum. |
-| `stream_reset` | `void` | `void` | Resets running stream byte counters, chunk metrics, and rolling FNV-1a checksum. |
-| `stream_get_total_bytes` | `void` | `size_t` | Returns total bytes processed across stream chunks. |
-| `extract_page_data` | `char *raw_html, char *target_tag` | `char*` | Extracts matching tag blocks via pointer scanning without DOM parsing APIs. |
-| `extract_tables_csv` | `char *raw_html` | `char*` | Traverses table elements using pure C pointer arithmetic and serializes to CSV format. |
-| `filter_logs` | `const char *input, const char *keyword` | `char*` | Extracts lines containing keyword bounded strictly by newline boundaries. |
-| `base64_encode` | `const char *input` | `char*` | Encodes input string using RFC 4648 Base64; returns null-terminated string. |
-| `base64_decode` | `const char *input` | `char*` | Decodes Base64 string; ignores whitespace; returns null-terminated string. |
-| `sha256_hash` | `const char *input` | `char*` | Computes standard 256-bit message digest; returns 64-character lowercase hex string. |
-| `validate_json` | `char *payload` | `int` | Single-pass structural validator; returns `0` if valid, or 1-based error line number. |
+### 2. Browser Memory Exhaustion on Massive Files
+Uploading or parsing multi-hundred-megabyte or gigabyte-scale datasets in the browser normally causes out-of-memory tab crashes due to monolithic JavaScript string and ArrayBuffer buffering. RedTerminal enforces a **bounded 5MB slice streaming pipeline** with the browser's `File.slice()` API. Each 5MB chunk is transferred to WASM linear memory, processed by a pure C engine, and immediately freed via `Module._free()`, maintaining a strictly flat $\le 5\text{MB}$ RAM footprint regardless of file size.
+
+### 3. Infrastructure Friction for Tabular Data Analysis
+Querying CSV files with SQL typically requires spinning up database servers (PostgreSQL/MySQL), setting up Docker containers, or uploading data to third-party cloud spreadsheet services. RedTerminal provides an **ephemeral in-memory CSV-to-SQL cruncher** powered by a standalone `sqlite3.wasm` drop-in. It provisions a `:memory:` database inside WebAssembly that executes standard SQL queries client-side and vanishes completely the moment the browser tab is closed.
+
+### 4. Webpage Scraping and DOM Clutter
+Web pages are laden with ad tracking scripts and complex nested structures. RedTerminal combines a server-side Go CORS-bypass proxy with pure C pointer parsing to scrape any URL, isolate tables into RFC 4180 CSV files, and filter ad blocks without overhead from heavy JavaScript DOM parsers.
 
 ---
 
-## Command Reference
+## Key Use Cases
 
-| Command | Environment | Description | Syntax |
-| :--- | :--- | :--- | :--- |
-| `scan` | Web / Extension | Zero-Trust secret & high-entropy credential scanner (C engine) | `scan [text]` |
-| `query` | Web | Executes SQL on uploaded CSV via ephemeral in-memory SQLite-WASM | `query <sql_query>` |
-| `upload` | Web | Streams massive files in 5MB slices to WASM memory chunker | `upload` |
-| `extract <tag>` | Web / Extension | Parse and extract specific tag blocks via pure C WASM engine | `extract <tag>` |
-| `extract-tables` | Web / Extension | Extract all `<table>` elements into CSV via C WASM engine | `extract-tables` |
-| `nuke-ads` | Web / Extension | Scan and extract ad/tracking script blocks via C WASM engine | `nuke-ads` |
-| `fetch <url> \| filter <kw>` | Web | Scrapes URL via Go CORS proxy and filters matching lines via WASM | `fetch <url> \| filter <kw>` |
-| `fetch <url> \| scan` | Web | Scrapes URL via Go CORS proxy and audits content for credentials | `fetch <url> \| scan` |
-| `filter` | Web | Filter log lines containing a keyword via WASM pointer scan | `filter <keyword>` |
-| `b64` | Web | Encode or decode string via WASM Base64 engine | `b64 [-e\|-d] <text>` |
-| `hash` | Web | Compute SHA-256 hash digest via WASM | `hash <text>` |
-| `check` | Web | Validate JSON bracket, brace, and quote syntax via WASM | `check <json>` |
-| `start` | Native | Allocate a new process in the PCB table | `start <name>` |
-| `kill` | Native | Terminate an active or suspended process | `kill <pid>` |
-| `pause` | Native | Suspend CPU time allocation | `pause <pid>` |
-| `resume` | Native | Resume CPU time allocation | `resume <pid>` |
-| `ps` | Native / Web | Display active Process Control Block records | `ps` |
-| `logs` | Native | Dump internal system events from disk | `logs` |
-| `echo` | Web | Print arguments to terminal buffer | `echo [text]` |
-| `ping` | Web | Measure local execution latency | `ping` |
-| `clear` | Web | Flush terminal viewport | `clear` |
-| `info` | Web | Output system architecture specifications | `info` |
-| `help` | Native / Web | Display available commands | `help` |
-| `exit` | Native | Terminate scheduler thread and close application | `exit` |
+- **Client-Side Security Auditing:** Scan live web pages, codebase snippets, or API responses for exposed credentials (`AKIA` for AWS, `sk_live_` for Stripe, `ghp_` for GitHub, Slack tokens, private keys, and high-entropy strings).
+- **Ephemeral & Private Data Crunching:** Query sensitive internal, financial, or medical CSV files with standard SQL (`SELECT`, `JOIN`, `GROUP BY`, `WHERE`) with zero disk footprint and zero server telemetry.
+- **Massive Dataset Ingestion:** Stream multi-gigabyte log dumps and binary files through WebAssembly with real-time UI progress indicators and flat RAM usage.
+- **In-Browser Web Scraping:** Scrape external sites through the Go CORS proxy and pipe raw HTML directly into the C filter or secret scanner (`fetch <url> | filter <kw>` or `fetch <url> | scan`).
+- **DevTools Browser Overlay:** Toggle RedTerminal on any active webpage via the Manifest V3 browser extension to audit DOM nodes, extract tables into downloadable CSVs, and purge tracking scripts.
 
 ---
 
-## Build and Execution
+## Architecture & Core Concepts
 
-### Prerequisites
+### 1. C-Dominant Architecture ("JS as a Dumb Pipe")
+The JavaScript layer (`public/app.js`, `content.js`) is strictly isolated to user interface events, terminal rendering, and pointer passing. All computational logic is written in standard C11 and compiled to WebAssembly:
+- Text filtering, tag extraction, and credential matching operate directly on byte pointers (`const char *p`).
+- No external regex engines are used; all pattern matching is performed using state-machine pointer arithmetic and Shannon entropy.
+- When results are computed, the C engine returns an allocated memory address (`char*`) that JavaScript reads via `Module.UTF8ToString(ptr)` before deallocating with `Module._free(ptr)`.
 
-- GCC (supporting `-std=c11` and `-pthread`)
-- GNU Make
-- Go 1.20+ (for backend HTTP execution)
-- Emscripten SDK (`emcc`, for compiling C modules to WebAssembly)
+### 2. Zero-Trust Secret Scanner (Sliding Window & Shannon Entropy)
+The scanner (`src/scanner.c`) analyzes character streams through a multi-tier sliding window:
+
+```mermaid
+flowchart LR
+    Input["Input Text / Live DOM (outerHTML)"] --> PointerTraverse["Pointer Traversal & Delimiter Stepping"]
+    
+    PointerTraverse --> PrefixCheck{"Prefix Match?<br/>(AKIA, sk_live_, ghp_, glpat-, xoxb-, AIza, Private Key)"}
+    PrefixCheck -- Yes --> FlagCritical["Flag Known Credential<br/>Severity: CRITICAL / HIGH"]
+    
+    PrefixCheck -- No --> TokenLen{"Token Length<br/>16 <= L <= 128?"}
+    TokenLen -- Yes --> ContextCheck{"Sensitive Keyword in Lookback Window?<br/>(secret, key, token, auth, etc.)"}
+    
+    ContextCheck -- Yes --> EntropyKey{"Shannon Entropy<br/>H >= 3.6 bits/char?"}
+    EntropyKey -- Yes --> FlagContext["Flag High-Entropy Secret<br/>(Keyword Associated)"]
+    
+    ContextCheck -- No --> EntropyHigh{"High Randomness & Mixed Classes?<br/>L >= 24 and H >= 4.2 bits/char?"}
+    EntropyHigh -- Yes --> FlagRandom["Flag High-Entropy Token<br/>(High Randomness)"]
+    
+    FlagCritical --> FormatReport["Format Structured Vulnerability Report"]
+    FlagContext --> FormatReport
+    FlagRandom --> FormatReport
+    
+    FormatReport --> RenderRed["Render Findings in Terminal UI (Red Text #ef4444)"]
+```
+
+Shannon entropy is evaluated across candidate tokens without third-party math libraries:
+$$H = -\sum_{i=0}^{255} P(c_i) \log_2 P(c_i)$$
+Tokens with high character diversity preceded by sensitive assignment keywords (`secret=`, `key=`, `token=`, `auth=`) or possessing high entropy ($H \ge 4.2$) across mixed character sets are flagged as vulnerabilities and printed directly in **red text** (`#ef4444`) in the terminal UI.
+
+### 3. Bounded 5MB Stream Chunking Pipeline
+For massive file uploads, RedTerminal slices files into strictly 5MB segments:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Browser as Browser Client (app.js)
+    participant WASM as WASM Heap (HEAPU8)
+    participant StreamC as Pure C11 (stream.c)
+
+    User->>Browser: Selects Massive File (e.g. 1GB log / binary)
+    Browser->>StreamC: stream_reset()
+    loop For each 5MB Slice
+        Browser->>Browser: slice = File.slice(offset, offset + 5MB)
+        Browser->>WASM: ptr = Module._malloc(sliceSize)
+        Browser->>WASM: HEAPU8.set(sliceBytes, ptr)
+        Browser->>StreamC: process_chunk(ptr, sliceSize)
+        StreamC-->>Browser: Return 0 (Updated line counts & FNV-1a)
+        Browser->>WASM: Module._free(ptr) [Immediate Deallocation]
+        Browser->>User: Render Terminal Progress Indicator (%)
+    end
+    Browser->>User: Print Complete (Total Bytes, Duration, Checksum, Flat RAM)
+```
+
+At any point during processing, the active WebAssembly heap footprint is bounded by the size of a single slice ($\le 5\text{MB}$), preventing browser memory ballooning.
+
+### 4. Transient In-Memory SQLite-WASM Engine
+The SQL engine utilizes a precompiled, zero-dependency `sqlite3.wasm` drop-in served directly from `public/`:
+- Ingested CSV files are parsed client-side compliant with RFC 4180.
+- Column types are inferred (`INTEGER`, `REAL`, `TEXT`) and loaded into an isolated `:memory:` database instance (`new sqlite.oo1.DB(':memory:', 'c')`).
+- Queries execute completely in-memory with zero disk persistence and zero host server connections.
+- The entire database instance and all associated temporary tables vanish completely when the tab or window closes.
+
+---
+
+## Detailed Technical Documentation & Commands
+
+To keep this document focused on system architecture and capabilities, detailed specifications and CLI usage instructions are maintained in dedicated reference documents accessible from any device or browser:
+
+- [**Commands Reference (`demo/commands.md`)**](demo/commands.md): Complete index of all native CLI commands, WebAssembly terminal commands (`scan`, `query`, `upload`, `extract-tables`, `nuke-ads`, `filter`, `b64`, `hash`, `check`), argument syntax, and execution flows.
+- [**Architecture Deep Dive (`demo/architecture.md`)**](demo/architecture.md): Full technical breakdown of memory models, Emscripten linear memory handoff layouts, native POSIX multithreaded scheduler specifications, and process state machines.
+
+---
+
+## Deployment & Build
+
+RedTerminal is live at [**redterminal.onrender.com**](https://redterminal.onrender.com). It runs as a stateless Docker container defined in [`Dockerfile`](Dockerfile) and orchestrated via [`render.yaml`](render.yaml).
 
 ### Build Directives
 
-#### 1. Compile Native Binary
+#### 1. Compile Native POSIX Binary
 ```bash
 make
 ```
-Produces the `redterm` native executable at the project root.
+Compiles the `redterm` native executable for process lifecycle management and POSIX thread scheduling.
 
-#### 2. Execute Test Suites
+#### 2. Run Test Suites
 ```bash
+# Run native C test binaries
 make test
-```
-Compiles and executes test binaries in `tests/`, validating process lifecycles, thread safety, cryptography, syntax validation, stream chunking, and secret scanning.
 
-#### 3. Compile WebAssembly Module
+# Run JavaScript & WebAssembly regression tests
+node tests/test_secret_scanner.js
+node tests/test_stream_chunking.js
+node tests/test_csv_sql.js
+node tests/test_extension.js
+
+# Run Go server unit tests
+go test -v ./...
+```
+
+#### 3. Compile WebAssembly Modules
 ```bash
 make build-wasm
 ```
-Compiles `src/*.c` using `emcc` into `public/redterm.js` and `public/redterm.wasm` with exported memory functions.
+Compiles all C sources in `src/` via Emscripten (`emcc`) into `public/redterm.js` and `public/redterm.wasm`.
 
 #### 4. Run Web Application
 ```bash
 make run
+# Starts Go backend server on http://localhost:8080
 ```
-Builds the WebAssembly artifacts and starts the Go HTTP server on `http://localhost:8080`.
-
-#### 5. Clean Artifacts
-```bash
-make clean
-```
-Removes compiled object files, native executables, test binaries, and WebAssembly build artifacts.
 
 ---
 
 ## License
 
-RedTerminal operates under the MIT License.
-
-The full license text is available in the [LICENSE](LICENSE) directive.
+RedTerminal is licensed under the custom [**Voxion Labs Proprietary Research License (VL-PRL)**](LICENSE). See the full terms, operational parameters, and grant of access in the [LICENSE](LICENSE) file.
 
 ---
 <div align="center">
   (c) 2026 Voxion Labs & Rudranarayan Jena
 </div>
 <p align="center">
-  Zero-Backend · CRDT Edge Cookies · C · WebAssembly
+  Zero-Backend &bull; WebAssembly &bull; C11 &bull; SQLite-WASM &bull; Zero-Trust Security
 </p>

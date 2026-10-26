@@ -1,21 +1,21 @@
-MIT License
+# Voxion Labs Proprietary Research License (VL-PRL)
 
-Copyright (c) 2026 Voxion Labs & Rudranarayan Jena
+**Copyright (c) 2026 Rudranarayan Jena. All Rights Reserved.**
+**Organization: Voxion Labs**
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This software and associated documentation files (the "Software"), specifically the VoidLAB repository and its underlying frontend architecture, UI/UX logic, and design assets, are the proprietary intellectual property of Rudranarayan Jena and Voxion Labs.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+## 1. Grant of Access
+Access to the source code is provided strictly for academic review, architectural analysis, and transparent security auditing. 
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+## 2. Restrictions
+By accessing this repository, you agree to the following strict operational parameters:
+* **No Modification:** You may not modify, alter, translate, or create derivative works of the Software or its frontend logic.
+* **No Distribution:** You may not copy, distribute, sublicense, host, or transfer the Software, in whole or in part, to any third party.
+* **No Commercial Use:** You may not use the Software for any commercial, corporate, or production purposes under any circumstances.
+* **No Public Forks:** You may not deploy or publicly host modified or unmodified versions of this Software on any platform.
+
+## 3. Enforcement
+Voxion Labs enforces strict intellectual property protection. Any unauthorized usage, commercial exploitation, or codebase cloning will be met with immediate legal action.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
