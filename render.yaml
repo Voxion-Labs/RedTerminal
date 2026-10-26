@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: redterminal
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /ping
+    envVars:
+      - key: PORT
+        value: "8080"

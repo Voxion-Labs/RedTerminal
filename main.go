@@ -7,6 +7,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 )
 
@@ -93,7 +94,11 @@ func main() {
 	fileServer := http.FileServer(http.Dir("public"))
 	mux.Handle("/", fileServer)
 
-	addr := ":8080"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	addr := ":" + port
 	log.Printf("RedTerminal server started on http://localhost%s\n", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatalf("Server failed: %v", err)
