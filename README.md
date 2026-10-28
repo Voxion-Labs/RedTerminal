@@ -1,17 +1,9 @@
 <p align="center">
   <img src="demo/logo.png" alt="RedTerminal Logo" width="130" />
 </p>
-<h1 align="center">RedTerminal</h1>
+<h1 align="center"><a href="https://redterminal.onrender.com">RedTerminal</a></h1>
 <p align="center">
   A high-performance C-dominant security analysis, data crunching, and WebAssembly execution workstation operating directly in the browser and as a toggleable Manifest V3 overlay extension.
-</p>
-
-<p align="center">
-  <a href="https://redterminal.onrender.com"><strong>Live Web Terminal (Render)</strong></a>
-  &bull;
-  <a href="https://voxion-labs.github.io/RedTerminal/"><strong>GitHub Pages Deployment</strong></a>
-  &bull;
-  <a href="https://github.com/Voxion-Labs/RedTerminal/issues"><strong>Telemetry & Issues</strong></a>
 </p>
 
 ---
@@ -226,3 +218,9 @@ RedTerminal is licensed under the custom [**Voxion Labs Proprietary Research Lic
 <p align="center">
   Zero-Backend &bull; WebAssembly &bull; C11 &bull; SQLite-WASM &bull; Zero-Trust Security
 </p>
+
+<!-- Mermaid.js for diagram rendering on all devices -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
