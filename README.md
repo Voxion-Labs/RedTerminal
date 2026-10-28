@@ -218,9 +218,3 @@ RedTerminal is licensed under the custom [**Voxion Labs Proprietary Research Lic
 <p align="center">
   Zero-Backend &bull; WebAssembly &bull; C11 &bull; SQLite-WASM &bull; Zero-Trust Security
 </p>
-
-<!-- Mermaid.js for diagram rendering on all devices -->
-<script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
-<script>
-  mermaid.initialize({ startOnLoad: true, theme: 'default' });
-</script>
