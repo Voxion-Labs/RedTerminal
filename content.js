@@ -336,6 +336,9 @@
         if (activeInput) {
             activeInput.textContent = currentBuffer;
         }
+        if (hiddenInput && hiddenInput.value !== currentBuffer) {
+            hiddenInput.value = '';
+        }
         scrollToBottom();
     }
 
@@ -648,16 +651,67 @@
         const trimmed = cmd.trim();
         if (!trimmed) return;
 
-        // Pipe fetch commands: fetch <url> | filter <kw>
-        if (trimmed.toLowerCase().startsWith('fetch') && trimmed.includes('|')) {
-            const pipeIdx = trimmed.indexOf('|');
-            const fetchPart = trimmed.substring(0, pipeIdx).trim();
-            const filterPart = trimmed.substring(pipeIdx + 1).trim();
+        // Fetch web URL commands: fetch <url>, fetch <url> | filter <kw>, fetch <url> | scan, or direct URL
+        if (trimmed.toLowerCase().startsWith('fetch') || (trimmed.includes('|') && trimmed.toLowerCase().includes('fetch')) || /^https?:\/\//i.test(trimmed)) {
+            const fetchCmd = /^https?:\/\//i.test(trimmed) ? 'fetch ' + trimmed : trimmed;
+            const pipeIdx = fetchCmd.indexOf('|');
+            if (pipeIdx === -1) {
+                // Standalone fetch
+                const parts = fetchCmd.split(/\s+/);
+                const url = parts.slice(1).join(' ').trim().replace(/^["']|["']$/g, '');
+                if (!url) {
+                    termPrint('Usage: fetch <url> | filter <keyword>', 'error');
+                    termPrint('Example: fetch https://example.com | filter title', 'dim');
+                    return;
+                }
+                termPrint(`Fetching ${url}...`, 'dim');
+                try {
+                    const resp = await fetch(url);
+                    const html = await resp.text();
+                    const lines = html.split(/\r?\n/).filter(l => l.length > 0);
+                    const previewLimit = Math.min(20, lines.length);
+                    termPrint(`--- Fetched ${lines.length} Line(s) from ${url} (Showing ${previewLimit}) ---`, 'highlight');
+                    for (let i = 0; i < previewLimit; i++) {
+                        termPrint(lines[i]);
+                    }
+                    if (lines.length > previewLimit) {
+                        termPrint(`... [${lines.length - previewLimit} additional line(s) omitted]`, 'dim');
+                    }
+                    termPrint('----------------------------------------------------', 'highlight');
+                } catch (err) {
+                    termPrint(`Fetch failed: ${err.message}`, 'error');
+                }
+                return;
+            }
+
+            const fetchPart = fetchCmd.substring(0, pipeIdx).trim();
+            const filterPart = fetchCmd.substring(pipeIdx + 1).trim();
 
             const url = fetchPart.replace(/^fetch\s*/i, '').trim().replace(/^["']|["']$/g, '');
-            const kw = filterPart.replace(/^filter\s*/i, '').trim().replace(/^["']|["']$/g, '');
+            const filterParts = filterPart.split(/\s+/);
+            const filterAction = filterParts[0] ? filterParts[0].toLowerCase() : '';
 
-            if (!url || !kw) {
+            if (!url) {
+                termPrint('Usage: fetch <url> | filter <keyword>', 'error');
+                return;
+            }
+
+            if (filterAction === 'scan') {
+                termPrint(`Fetching ${url}...`, 'dim');
+                try {
+                    const resp = await fetch(url);
+                    const html = await resp.text();
+                    termPrint(`Scanning fetched HTML from ${url} for exposed secrets...`, 'dim');
+                    const report = callWasmScanSecrets(html);
+                    renderScanReport(report);
+                } catch (err) {
+                    termPrint(`Fetch failed: ${err.message}`, 'error');
+                }
+                return;
+            }
+
+            const kw = filterParts.slice(1).join(' ').trim().replace(/^["']|["']$/g, '');
+            if (!kw) {
                 termPrint('Usage: fetch <url> | filter <keyword>', 'error');
                 return;
             }
@@ -819,6 +873,9 @@
         }
 
         currentBuffer = '';
+        if (hiddenInput) {
+            hiddenInput.value = '';
+        }
         updateInputDisplay();
 
         if (cmd.trim()) {
@@ -827,11 +884,100 @@
     }
 
     // ==========================================
-    // 7. Keyboard Input Handling (Isolated)
+    // Clipboard & Paste Handling
+    // ==========================================
+    let lastPasteTime = 0;
+    let lastPastedText = '';
+
+    function handlePasteText(text) {
+        if (!text || typeof text !== 'string') return;
+        let cleaned = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+        if (!cleaned) return;
+
+        const now = Date.now();
+        if (now - lastPasteTime < 150 && lastPastedText === cleaned) {
+            return;
+        }
+        lastPasteTime = now;
+        lastPastedText = cleaned;
+
+        cleaned = cleaned.replace(/\n+/g, ' ');
+
+        if (!currentBuffer.trim() && /^https?:\/\//i.test(cleaned)) {
+            currentBuffer = 'fetch ' + cleaned;
+        } else {
+            currentBuffer += cleaned;
+        }
+        updateInputDisplay();
+    }
+
+    async function pasteFromClipboard() {
+        try {
+            if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.readText === 'function') {
+                const text = await navigator.clipboard.readText();
+                if (text) {
+                    handlePasteText(text);
+                    return true;
+                }
+            }
+        } catch (err) {
+            console.warn('Clipboard read failed or permission denied:', err);
+        }
+        return false;
+    }
+
+    // ==========================================
+    // 7. Keyboard & Mouse Input Handling (Isolated)
     // ==========================================
     // Focus terminal on click anywhere on overlay
     overlay.addEventListener('click', () => {
         focusInput();
+    });
+
+    // Native paste events on overlay and hidden input
+    overlay.addEventListener('paste', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const text = (e.clipboardData || (typeof window !== 'undefined' && window.clipboardData))?.getData('text');
+        if (text) {
+            handlePasteText(text);
+        }
+    });
+
+    if (hiddenInput) {
+        hiddenInput.addEventListener('paste', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const text = (e.clipboardData || (typeof window !== 'undefined' && window.clipboardData))?.getData('text');
+            if (text) {
+                handlePasteText(text);
+            }
+        });
+    }
+
+    // Mouse Right-Click & Touchpad 2-finger click paste
+    overlay.addEventListener('contextmenu', async (e) => {
+        e.stopPropagation();
+        const selection = (shadowRoot && typeof shadowRoot.getSelection === 'function') ? shadowRoot.getSelection().toString() : ((typeof window !== 'undefined' && window.getSelection) ? window.getSelection().toString() : '');
+        if (selection) {
+            try {
+                if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(selection);
+                }
+            } catch (_) {}
+            return;
+        }
+        e.preventDefault();
+        await pasteFromClipboard();
+    });
+
+    // Middle-click paste
+    overlay.addEventListener('auxclick', async (e) => {
+        if (e.button === 1) {
+            e.stopPropagation();
+            e.preventDefault();
+            await pasteFromClipboard();
+        }
     });
 
     // Trap typing inside overlay to prevent triggering host page hotkeys
@@ -840,15 +986,29 @@
         e.stopPropagation();
 
         if (e.ctrlKey || e.metaKey) {
-            if (e.key.toLowerCase() === 'l') {
+            const key = (e.key || '').toLowerCase();
+            if (key === 'l') {
                 e.preventDefault();
                 termClear();
-            } else if (e.key.toLowerCase() === 'c') {
+                return;
+            } else if (key === 'c') {
                 e.preventDefault();
                 termPrint('^C', 'dim');
                 currentBuffer = '';
                 updateInputDisplay();
+                return;
+            } else if (key === 'v') {
+                // Ctrl+V (Windows/Linux) or Cmd+V (macOS)
+                pasteFromClipboard();
+                return;
             }
+            return;
+        }
+
+        // Shift+Insert (Standard Linux / Windows terminal paste)
+        if (e.shiftKey && (e.key === 'Insert' || e.code === 'Insert')) {
+            e.preventDefault();
+            pasteFromClipboard();
             return;
         }
 
@@ -881,7 +1041,7 @@
                 currentBuffer = '';
                 updateInputDisplay();
             }
-        } else if (e.key.length === 1) {
+        } else if (e.key && e.key.length === 1) {
             e.preventDefault();
             currentBuffer += e.key;
             updateInputDisplay();

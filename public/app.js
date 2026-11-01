@@ -1497,9 +1497,10 @@ async function executeCommand(cmd) {
     const trimmed = cmd.trim();
     if (!trimmed) return;
 
-    // Intercept fetch & piped filter commands
-    if (trimmed.toLowerCase().startsWith('fetch') || (trimmed.includes('|') && trimmed.toLowerCase().includes('fetch'))) {
-        await handleFetchFilterCommand(trimmed);
+    // Intercept fetch & piped filter commands, or direct URL inputs
+    if (trimmed.toLowerCase().startsWith('fetch') || (trimmed.includes('|') && trimmed.toLowerCase().includes('fetch')) || /^https?:\/\//i.test(trimmed)) {
+        const fetchCmd = /^https?:\/\//i.test(trimmed) ? 'fetch ' + trimmed : trimmed;
+        await handleFetchFilterCommand(fetchCmd);
         return;
     }
 
@@ -1525,7 +1526,7 @@ async function executeCommand(cmd) {
             termPrint('  extract <tag>   - Parse and extract specific tag blocks via pure C WASM engine');
             termPrint('  extract-tables  - Extract all <table> blocks into CSV via C WASM engine');
             termPrint('  nuke-ads        - Scan and extract ad/tracking script blocks via C WASM engine');
-            termPrint('  fetch <url> | filter <kw> - Fetch URL via Go proxy & filter lines via WASM');
+            termPrint('  fetch <url> [| filter <kw>] - Fetch URL via Go proxy & filter lines (supports paste)');
             termPrint('  query <sql>     - Execute SQL on uploaded CSV via in-memory SQLite-WASM');
             termPrint('  scan [text]     - Zero-Trust secret & high-entropy credential scanner (C engine)');
             termPrint('  upload          - Upload large files in 5MB slices to WASM memory chunker');
@@ -1921,6 +1922,10 @@ function updateInputDisplay() {
     if (activeInput) {
         activeInput.textContent = currentBuffer;
     }
+    const hiddenInput = document.getElementById('hidden-input');
+    if (hiddenInput && hiddenInput.value !== currentBuffer) {
+        hiddenInput.value = '';
+    }
     scrollToBottom();
 }
 
@@ -1976,6 +1981,10 @@ function commitCommand() {
     }
 
     currentBuffer = '';
+    const hiddenInput = document.getElementById('hidden-input');
+    if (hiddenInput) {
+        hiddenInput.value = '';
+    }
     updateInputDisplay();
 
     // Execute through Emscripten / placeholder pipeline
@@ -1984,19 +1993,101 @@ function commitCommand() {
     }
 }
 
-// Keyboard Input Handler (Printable chars, Enter, Backspace, History)
+// ==========================================
+// Clipboard & Paste Handling
+// ==========================================
+let lastPasteTime = 0;
+let lastPastedText = '';
+
+/**
+ * Inserts or pastes text into the active command buffer.
+ * If the current buffer is empty and user pastes a URL (http:// or https://),
+ * it auto-prepends 'fetch ' for instant web URL fetching.
+ * Otherwise, it appends the cleaned text to the current command buffer.
+ *
+ * @param {string} text - Raw string to paste
+ */
+function handlePasteText(text) {
+    if (!text || typeof text !== 'string') return;
+
+    let cleaned = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+    if (!cleaned) return;
+
+    const now = Date.now();
+    // Debounce duplicate paste events within 150ms with identical text
+    if (now - lastPasteTime < 150 && lastPastedText === cleaned) {
+        return;
+    }
+    lastPasteTime = now;
+    lastPastedText = cleaned;
+
+    // Convert internal newlines to spaces for single-line terminal command prompt
+    cleaned = cleaned.replace(/\n+/g, ' ');
+
+    // Web URL convenience: if buffer is empty and text starts with http:// or https://, auto-prefix 'fetch '
+    if (!currentBuffer.trim() && /^https?:\/\//i.test(cleaned)) {
+        currentBuffer = 'fetch ' + cleaned;
+    } else {
+        currentBuffer += cleaned;
+    }
+
+    updateInputDisplay();
+}
+
+/**
+ * Reads plain text from system clipboard using Async Clipboard API.
+ * Safely handles permission denials, unsupported environments, or restrictions.
+ */
+async function pasteFromClipboard() {
+    try {
+        if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.readText === 'function') {
+            const text = await navigator.clipboard.readText();
+            if (text) {
+                handlePasteText(text);
+                return true;
+            }
+        }
+    } catch (err) {
+        console.warn('Clipboard read failed or permission denied:', err);
+    }
+    return false;
+}
+
+function focusInput() {
+    const hiddenInput = document.getElementById('hidden-input');
+    if (hiddenInput && typeof hiddenInput.focus === 'function') {
+        hiddenInput.focus();
+    }
+}
+
+// Keyboard Input Handler (Printable chars, Enter, Backspace, History, Shortcuts)
 document.addEventListener('keydown', (e) => {
-    // Ignore key combinations with Ctrl or Alt (except Ctrl+L for clear, Ctrl+C for interrupt)
+    // Check for Ctrl / Meta (Cmd on macOS) shortcuts
     if (e.ctrlKey || e.metaKey) {
-        if (e.key.toLowerCase() === 'l') {
+        const key = (e.key || '').toLowerCase();
+        if (key === 'l') {
             e.preventDefault();
             termClear();
-        } else if (e.key.toLowerCase() === 'c') {
+            return;
+        } else if (key === 'c') {
             e.preventDefault();
             termPrint('^C', 'dim');
             currentBuffer = '';
             updateInputDisplay();
+            return;
+        } else if (key === 'v') {
+            // Ctrl+V (Windows/Linux) or Cmd+V (macOS)
+            // Trigger async clipboard read as proactive fallback while native paste event fires
+            pasteFromClipboard();
+            return;
         }
+        return;
+    }
+
+    // Shift+Insert (Standard Linux / Windows terminal paste)
+    if (e.shiftKey && (e.key === 'Insert' || e.code === 'Insert')) {
+        e.preventDefault();
+        pasteFromClipboard();
         return;
     }
 
@@ -2029,7 +2120,7 @@ document.addEventListener('keydown', (e) => {
             currentBuffer = '';
             updateInputDisplay();
         }
-    } else if (e.key.length === 1) {
+    } else if (e.key && e.key.length === 1) {
         // Printable single-character input
         e.preventDefault();
         currentBuffer += e.key;
@@ -2037,14 +2128,62 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+// Native Clipboard Paste Event Listener (Cross-browser, permission-free)
+document.addEventListener('paste', (e) => {
+    if (e.target && e.target.tagName === 'INPUT' && e.target.id !== 'hidden-input') {
+        return;
+    }
+    e.preventDefault();
+    let text = '';
+    if (e.clipboardData && typeof e.clipboardData.getData === 'function') {
+        text = e.clipboardData.getData('text/plain') || e.clipboardData.getData('text');
+    } else if (typeof window !== 'undefined' && window.clipboardData && typeof window.clipboardData.getData === 'function') {
+        text = window.clipboardData.getData('Text');
+    }
+    if (text) {
+        handlePasteText(text);
+    }
+});
+
+// Mouse Right-Click & Touchpad 2-finger click paste handler
+const termContainer = document.getElementById('terminal-container') || document;
+if (termContainer) {
+    termContainer.addEventListener('contextmenu', async (e) => {
+        // If user highlighted text in terminal, allow copy rather than overwriting
+        const selection = (typeof window !== 'undefined' && window.getSelection) ? window.getSelection().toString() : '';
+        if (selection) {
+            try {
+                if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(selection);
+                }
+            } catch (_) {}
+            return;
+        }
+
+        // 2-finger click on touchpad or mouse right-click: paste clipboard content
+        e.preventDefault();
+        await pasteFromClipboard();
+    });
+
+    // Mouse middle-click paste (Unix / Linux / standard terminal behavior)
+    termContainer.addEventListener('auxclick', async (e) => {
+        if (e.button === 1) {
+            e.preventDefault();
+            await pasteFromClipboard();
+        }
+    });
+}
+
 // Focus helper: clicking anywhere on terminal ensures typing focus
 document.addEventListener('click', () => {
     scrollToBottom();
+    focusInput();
 });
 
 // Initialization
 window.addEventListener('DOMContentLoaded', () => {
     updateInputDisplay();
+    focusInput();
     termPrint('REDTERM v1.0 [Interactive Web Terminal]');
     termPrint("Type 'help' to inspect commands or 'upload' to test WASM file processing.", 'dim');
     termPrint('');

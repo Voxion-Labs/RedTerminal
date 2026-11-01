@@ -5,7 +5,9 @@
   "description": "Cross-browser WebAssembly terminal emulator and DOM mutator overlay for Chromium and Firefox.",
   "permissions": [
     "activeTab",
-    "scripting"
+    "scripting",
+    "clipboardRead",
+    "clipboardWrite"
   ],
   "action": {
     "default_title": "Toggle RedTerminal Overlay",
