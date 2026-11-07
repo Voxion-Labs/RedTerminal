@@ -14,11 +14,11 @@
     ]
   },
   "ledger": {
-    "last_commit_sha": "b16f9b96495f32ebf118165ec5b23d9b4b0ea9d8",
-    "last_commit_message": "Initial bootstrap",
-    "last_commit_author": "Voxion-Labs",
-    "last_updated_utc": "2026-11-07T09:09:00Z",
-    "build_status": "healthy",
+    "last_commit_sha": "d972e1564e16c0e7b79cf075cf5b63f6dd703c05",
+    "last_commit_message": "feat: adopt Lexio-style Go template engine, purge vendored JS, and add secure bot manifest ledger",
+    "last_commit_author": "liambrooks-lab",
+    "last_updated_utc": "2026-11-07T09:18:47Z",
+    "build_status": "verified",
     "system_architecture": {
       "core_engine": "C11 (WebAssembly)",
       "backend_runtime": "Go 1.22+ (Render)",
