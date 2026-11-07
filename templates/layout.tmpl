@@ -1,0 +1,53 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="en">
+{{template "head" .}}
+<body>
+
+    <header>
+        <div class="brand">REDTERM <span>v{{.Version}}</span></div>
+
+        <!-- HTMX Polling Status Indicator: pings /ping on load and every 30s -->
+        <div class="status-badge"
+             hx-get="/ping"
+             hx-trigger="load, every 30s"
+             hx-target="#ping-target"
+             hx-swap="innerHTML">
+            <span class="status-dot"></span>
+            <span class="status-label">status:</span>
+            <span id="ping-target">connecting...</span>
+        </div>
+    </header>
+
+    <main>
+        <div id="terminal-container">
+            <div class="terminal-header">
+                <div class="window-dots">
+                    <div class="window-dot dot-red"></div>
+                    <div class="window-dot dot-yellow"></div>
+                    <div class="window-dot dot-green"></div>
+                </div>
+                <span>session: interactive (WASM/Go)</span>
+                <span>tty0</span>
+            </div>
+            <div id="terminal-window">
+                <div id="terminal-body">
+                    <div id="active-line">
+                        <span class="prompt">redterm &gt;</span>
+                        <span id="active-input"></span><span class="cursor" id="active-cursor"></span>
+                    </div>
+                </div>
+            </div>
+            <input type="text" id="hidden-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="position: absolute; opacity: 0; left: -9999px; top: -9999px; pointer-events: none;" />
+        </div>
+    </main>
+
+    <footer>
+        <span>WASM Core: Ready</span>
+        <span>distraction-free &bull; ultra-lightweight</span>
+        <span>Port :{{.Port}}</span>
+    </footer>
+
+{{template "scripts" .}}
+</body>
+</html>
+{{end}}

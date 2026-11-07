@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "RedTerminal Bot Manifest & Audit Ledger",
+  "version": "1.0.0",
+  "repository": "Voxion-Labs/RedTerminal",
+  "description": "Cryptographically auditable and automated commit ledger maintained exclusively by Voxion-Labs and authorized automation agents.",
+  "security_policy": {
+    "protected_branch": "main",
+    "external_pr_write_access": false,
+    "fork_write_permissions": "strictly_denied",
+    "authorized_actors": [
+      "Voxion-Labs",
+      "github-actions[bot]"
+    ]
+  },
+  "ledger": {
+    "last_commit_sha": "b16f9b96495f32ebf118165ec5b23d9b4b0ea9d8",
+    "last_commit_message": "Initial bootstrap",
+    "last_commit_author": "Voxion-Labs",
+    "last_updated_utc": "2026-11-07T09:09:00Z",
+    "build_status": "healthy",
+    "system_architecture": {
+      "core_engine": "C11 (WebAssembly)",
+      "backend_runtime": "Go 1.22+ (Render)",
+      "frontend_pipeline": "Dynamic Go Templates (.tmpl)",
+      "zero_trust_client_mode": true
+    }
+  }
+}

@@ -20,9 +20,12 @@ EMCC = emcc
 EMCC_FLAGS = -I./include -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap", "UTF8ToString"]' -s EXPORTED_FUNCTIONS='["_malloc", "_free", "_filter_logs", "_extract_page_data", "_extract_tables_csv", "_process_chunk", "_stream_reset", "_stream_get_total_bytes", "_stream_get_chunks_count", "_stream_get_checksum", "_scan_secrets"]' -s NO_EXIT_RUNTIME=1 -O2
 WASM_SRCS = $(SRC_DIR)/crypto.c $(SRC_DIR)/filter.c $(SRC_DIR)/validator.c $(SRC_DIR)/utils.c $(SRC_DIR)/process.c $(SRC_DIR)/scheduler.c $(SRC_DIR)/shell.c $(SRC_DIR)/html_parser.c $(SRC_DIR)/stream.c $(SRC_DIR)/scanner.c
 
-.PHONY: all clean run test build-wasm
+.PHONY: all clean run test build-wasm build-tmpl
 
 all: $(TARGET)
+
+build-tmpl:
+	go run build.go
 
 $(TARGET): $(OBJS) $(MAIN_OBJ)
 	$(CC) $(CFLAGS) -o $@ $^ -lm

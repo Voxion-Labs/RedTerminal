@@ -5,6 +5,7 @@ obj/
 # Executables
 redterm
 *.exe
+server
 
 # Logs
 *.log
@@ -13,3 +14,12 @@ redterm
 tests/test_process
 tests/test_scheduler
 tests/test_logger
+
+# Generated frontend build artifacts (compiled from templates/)
+public/index.html
+public/app.js
+public/sqlite3.js
+public/redterm.js
+public/redterm.wasm
+content.js
+background.js

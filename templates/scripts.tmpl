@@ -1,0 +1,7 @@
+{{define "scripts"}}
+    <!-- Pre-compiled Zero-Dependency SQLite-WASM Drop-In with CDN Fallback -->
+    <script src="sqlite3.js" onerror="this.onerror=null;this.src='https://unpkg.com/@sqlite.org/sqlite-wasm@3.46.1-build1/sqlite-wasm/jswasm/sqlite3.js';"></script>
+
+    <!-- Vanilla JS Terminal Emulator with Cache-Busting Version Query -->
+    <script src="app.js?v={{.Version}}"></script>
+{{end}}

@@ -79,20 +79,28 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	_ = mime.AddExtensionType(".wasm", "application/wasm")
+	_ = mime.AddExtensionType(".js", "application/javascript")
 	mux := http.NewServeMux()
 
-	// /ping endpoint returning 'pong'
+	// /ping endpoint returning 'pong' (for Render health check & HTMX status badge)
 	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 		fmt.Fprint(w, "pong")
 	})
 
 	// /proxy?url= endpoint to fetch and return raw HTML from any URL
 	mux.HandleFunc("/proxy", proxyHandler)
 
-	// Static file server pointing to public/ directory
+	// Static file handler serving public/ with fresh cache-busting headers
 	fileServer := http.FileServer(http.Dir("public"))
-	mux.Handle("/", fileServer)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Enforce zero-cache headers so browser always gets the latest frontend
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+		fileServer.ServeHTTP(w, r)
+	})
 
 	port := os.Getenv("PORT")
 	if port == "" {

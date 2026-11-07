@@ -1,0 +1,233 @@
+{{define "styles"}}
+:root {
+    --bg-color: #0a0a0a;
+    --surface-color: #0d0d0d;
+    --header-color: #121212;
+    --border-color: #1c1c1c;
+    --border-light: #262626;
+    --text-color: #e0e0e0;
+    --muted-color: #888888;
+    --dim-color: #555555;
+    --accent-green: #22c55e;
+    --accent-red: #ef4444;
+    --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: var(--font-mono);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 16px 24px;
+}
+
+/* Top Minimalist Header */
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 32px;
+    margin-bottom: 12px;
+    user-select: none;
+}
+
+.brand {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--text-color);
+}
+
+.brand span {
+    color: var(--muted-color);
+    font-weight: 400;
+}
+
+/* HTMX Status Indicator */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--muted-color);
+    padding: 4px 10px;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    user-select: none;
+}
+
+.status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: var(--accent-green);
+}
+
+.status-label {
+    color: var(--dim-color);
+}
+
+#ping-target {
+    color: var(--accent-green);
+    font-weight: 500;
+}
+
+/* Main Terminal Container */
+main {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 0;
+}
+
+#terminal-container {
+    width: 100%;
+    height: 100%;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.terminal-header {
+    background: var(--header-color);
+    height: 32px;
+    padding: 0 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 11px;
+    color: var(--dim-color);
+    user-select: none;
+}
+
+.window-dots {
+    display: flex;
+    gap: 6px;
+}
+
+.window-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    opacity: 0.7;
+}
+.dot-red { background: #e06c75; }
+.dot-yellow { background: #e5c07b; }
+.dot-green { background: #98c379; }
+
+#terminal-window {
+    flex: 1;
+    padding: 20px 24px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #222 transparent;
+    cursor: text;
+}
+
+#terminal-window::-webkit-scrollbar {
+    width: 6px;
+}
+#terminal-window::-webkit-scrollbar-thumb {
+    background: #222;
+    border-radius: 3px;
+}
+
+#terminal-body {
+    font-size: 13.5px;
+    line-height: 1.65;
+    word-break: break-word;
+}
+
+.term-line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.prompt {
+    color: var(--accent-green);
+    font-weight: 500;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.term-cmd {
+    color: #ffffff;
+}
+
+.term-output {
+    color: var(--text-color);
+    margin-bottom: 4px;
+    white-space: pre-wrap;
+}
+
+.term-dim { color: var(--dim-color); }
+.term-highlight { color: #ffffff; font-weight: 500; }
+.term-success { color: var(--accent-green); }
+.term-error { color: var(--accent-red); }
+.term-system { color: var(--muted-color); font-style: italic; }
+
+/* Active Command Input Line */
+#active-line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+#active-input {
+    color: #ffffff;
+    white-space: pre-wrap;
+}
+
+.cursor {
+    display: inline-block;
+    width: 8px;
+    height: 15px;
+    background-color: var(--accent-green);
+    vertical-align: middle;
+    animation: blink 1s step-end infinite;
+    margin-left: 1px;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+/* Minimal Status Bar */
+footer {
+    height: 24px;
+    margin-top: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: var(--dim-color);
+    user-select: none;
+}
+{{end}}

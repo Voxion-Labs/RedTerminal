@@ -1,3 +1,0 @@
-*.js linguist-vendored
-public/* linguist-vendored
-tests/*.js linguist-vendored
