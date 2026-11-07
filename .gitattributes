@@ -1,0 +1,3 @@
+# Exclude UI templates and test suites from language statistics
+templates/** linguist-detectable=false
+tests/** linguist-detectable=false
