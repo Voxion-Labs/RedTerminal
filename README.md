@@ -183,12 +183,6 @@ Compiles the `redterm` native executable for process lifecycle management and PO
 # Run native C test binaries
 make test
 
-# Run JavaScript & WebAssembly regression tests
-node tests/test_secret_scanner.js
-node tests/test_stream_chunking.js
-node tests/test_csv_sql.js
-node tests/test_extension.js
-
 # Run Go server unit tests
 go test -v ./...
 ```
