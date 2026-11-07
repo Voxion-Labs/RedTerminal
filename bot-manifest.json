@@ -14,10 +14,10 @@
     ]
   },
   "ledger": {
-    "last_commit_sha": "f1daf0e70557a09240687b51c2683134ea7ad071",
-    "last_commit_message": "chore: exclude UI templates and test suites from language statistics via gitattributes",
+    "last_commit_sha": "c878fcf70e31ec35462333ac5de5d93249a08778",
+    "last_commit_message": "chore: purge legacy JS test harness and clean stray directories",
     "last_commit_author": "liambrooks-lab",
-    "last_updated_utc": "2026-11-07T09:33:26Z",
+    "last_updated_utc": "2026-11-07T09:43:03Z",
     "build_status": "verified",
     "system_architecture": {
       "core_engine": "C11 (WebAssembly)",
